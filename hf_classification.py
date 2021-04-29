@@ -57,8 +57,9 @@ def load_dataset(path, max_length):
 
         labels = list(df['label'])
 
-        assert len(seqs) == len(labels)
-        return seqs, labels
+        ids = list(df['Entry_name'])
+        assert len(seqs) == len(labels) == len(ids)
+        return seqs, labels, ids
 
 
 def encode_tags(tags, tag2id):
@@ -168,9 +169,9 @@ if __name__ == "__main__":
     val_batchsize = args.val_batchsize
  
 
-    train_seqs, train_labels = load_dataset(train_path, max_length)
-    val_seqs, val_labels = load_dataset(test_path, max_length)
-    test_seqs, test_labels = load_dataset(val_path, max_length)
+    train_seqs, train_labels, train_ids = load_dataset(train_path, max_length)
+    val_seqs, val_labels, val_ids = load_dataset(test_path, max_length)
+    test_seqs, test_labels, test_ids = load_dataset(val_path, max_length)
 
     logging.info("datasets loaded")
 
@@ -244,24 +245,27 @@ if __name__ == "__main__":
     logging.info(outdir)
 
 
-    test_predictions, test_label_ids, test_metrics = trainer.predict(test_dataset)
-    logging.info("test metrics (withheld)")
-    logging.info(test_metrics)
-    outtest  = outdir + "/" + expname + "_test_predictions.csv"
-    np.savetxt(outtest, test_predictions, delimiter=',')
+    get_predictions(outdir, test_path, len(tag2id), max_length, "withheldtest")
+    get_predictions(outdir, val_path, len(tag2id), max_length, "val")
+    get_predictions(outdir, train_path, len(tag2id), max_length, "train")
+    #test_predictions, test_label_ids, test_metrics = trainer.predict(test_dataset)
+    #logging.info("test metrics (withheld)")
+    #logging.info(test_metrics)
+    #outtest  = outdir + "/" + expname + "_test_predictions.csv"
+    #np.savetxt(outtest, test_predictions, delimiter=',')
 
-    train_predictions, train_label_ids, train_metrics = trainer.predict(train_dataset)
-    logging.info("train metrics")
-    logging.info(train_metrics)
-    outtrain  = outdir + "/" + expname + "_train_predictions.csv"
-    np.savetxt(outtrain, train_predictions, delimiter=',')
+    #train_predictions, train_label_ids, train_metrics = trainer.predict(train_dataset)
+    #logging.info("train metrics")
+    #logging.info(train_metrics)
+    #outtrain  = outdir + "/" + expname + "_train_predictions.csv"
+    #np.savetxt(outtrain, train_predictions, delimiter=',')
 
 
-    val_predictions, val_label_ids, val_metrics = trainer.predict(val_dataset)
-    logging.info("val metrics (seen during training)")
-    logging.info(val_metrics)
-    outval  = outdir + "/" + expname + "_val_predictions.csv"
-    np.savetxt(outval, val_predictions, delimiter=',')
+    #val_predictions, val_label_ids, val_metrics = trainer.predict(val_dataset)
+    #logging.info("val metrics (seen during training)")
+    #logging.info(val_metrics)
+    #outval  = outdir + "/" + expname + "_val_predictions.csv"
+    #np.savetxt(outval, val_predictions, delimiter=',')
 
  
 
