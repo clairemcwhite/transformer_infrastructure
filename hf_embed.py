@@ -1,11 +1,22 @@
-from sentence_transformers import SentenceTransformer
+from transformer_notebooks.hf_utils import parse_fasta
+from sentence_transformers import SentenceTransformer, models
+
 from Bio import SeqIO
 import pickle
 import argparse
 
-def embed_sequences(model_path, sequences, pkl_out):
-    model = SentenceTransformer(model_path)
+def embed_sequences(model_path, sequences, pkl_out, pre_embedded):
+
     
+    if pre_embedded == True:
+        model = SentenceTransformer(model_path)
+        print("model loaded")
+    else:
+        word_embedding_model = models.Transformer(model_path)
+        pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension())
+
+        model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
+        print("SentenceTransformer model created")
     
     #embeddings = model.encode(sequences)
 
@@ -13,7 +24,8 @@ def embed_sequences(model_path, sequences, pkl_out):
 
     #Compute the embeddings using the multi-process pool
     embeddings = model.encode_multi_process(sequences, pool)
-    print("Embeddings computed. Shape:", emb.shape)
+    # about 1.5 hours to this step with 4 GPU and 1.4 million sequences 
+    print("Embeddings computed. Shape:", embeddings.shape)
 
     #Optional: Stop the proccesses in the pool
     model.stop_multi_process_pool(pool)
@@ -29,23 +41,6 @@ def embed_sequences(model_path, sequences, pkl_out):
     #    stored_sequences = stored_data['sequences']
     #    stored_embeddings = stored_data['embeddings']
     
-def parse_fasta(fasta_path, sequence_out, no_spaces):
-
-   sequences = []
-
-
-   with open(sequence_out, "w") as outfile:
-
-       for record in SeqIO.parse(fasta_path, "fasta"):
-            #print("%s %i" % (record.id, record.seq))
-            if no_spaces:
-                seq_spaced = record.seq
-            else:
-                seq_spaced =  " ".join(record.seq)
-            outstring = "%s,%s\n".format(record.id, seq_spaced)
-            outfile.write(outstring)
-            sequences.append(seq_spaced)
-   return(sequences)
 
 def get_embed_args():
 
@@ -57,6 +52,9 @@ def get_embed_args():
 
     parser.add_argument("-n", "--dont_add_spaces" , action = "store_true",
                         help="Flag if sequences already have spaces")
+    parser.add_argument("-p", "--pre_embedded" , action = "store_true",
+                        help="Flag if model has already been saved as an embedding model")
+
     parser.add_argument("-op", "--outpickle", dest = "outpickle", type = str, required = True,
                         help="output .pkl filename")
     parser.add_argument("-os", "--outsequences", dest = "outsequences", type = str, required = True,
@@ -69,6 +67,6 @@ def get_embed_args():
 if __name__ == "__main__":
     args = get_embed_args()
     sequences = parse_fasta(args.fasta_path, args.outsequences, args.dont_add_spaces)
-    embed_sequences(args.model_path, sequences, args.outpickle)
+    embed_sequences(args.model_path, sequences, args.outpickle, args.pre_embedded)
 
 
