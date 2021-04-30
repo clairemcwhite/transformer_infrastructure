@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 import torch.nn.functional as F
 from scipy.special import logsumexp 
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix, classification_report, precision_recall_curve
 
 
 import pandas as pd
@@ -17,7 +17,7 @@ def softmax(x, axis=None):
      return np.exp(x - logsumexp(x, axis=axis, keepdims=True))
 
 
-def validation(dataloader, model, device_):
+def validation(dataloader, model, device_, true_index):
   r"""Validation function to evaluate model performance on a 
   separate set of data.
  
@@ -51,6 +51,7 @@ def validation(dataloader, model, device_):
   true_labels = []
   predictions_max = []
   predictions_probs = []
+  predictions_trueprobs = []
   #total loss for this epoch.
   total_loss = 0
  
@@ -102,20 +103,24 @@ def validation(dataloader, model, device_):
 
         # get probabilities
         # Only works with batchsize 1
-        probabilities = [max(softmax(logits, axis=-1)).flatten().tolist()]
+        probabilities_pairs = softmax(logits, axis=-1).tolist()
+        probabilities = [max(x) for x in probabilities_pairs]
+        true_probs = [x[true_index] for x in probabilities_pairs]
+        #probabilities = [softmax(logits, axis=-1).flatten().tolist()]
         #probabilities = [max(softmax(logits, axis=-1)).flatten().tolist()]
-        print(probabilities)
          
  
         # update list
         predictions_labels += predict_content
         predictions_probs += probabilities
- 
+        predictions_trueprobs += true_probs 
+
+
   # Return all true labels and prediciton for future evaluations.
-  return true_labels, predictions_labels, predictions_probs
+  return true_labels, predictions_labels, predictions_probs, predictions_trueprobs
 
 
-def get_predictions(model_path, dataset_path, max_length, name):
+def get_predictions(model_path, dataset_path, max_length, name, pos_label):
     #max_length = 1024
     #val_path = "/scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetVal.csv"
     #n_labels = 2
@@ -147,8 +152,10 @@ def get_predictions(model_path, dataset_path, max_length, name):
     #valid_dataloader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False)
     batch_size = 10
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    
-    true_labels, predictions_labels, probs = validation(dataloader, model, device)
+   
+    pos_index = tag2id[pos_label]
+ 
+    true_labels, predictions_labels, probs, true_probs = validation(dataloader, model, device, pos_index)
     
     print(classification_report(true_labels, predictions_labels))
     
@@ -164,23 +171,36 @@ def get_predictions(model_path, dataset_path, max_length, name):
     print(text_true)
     print(text_pred)
     print(probs)
+    print(true_probs)
 
     print(len(ids))
     print(len(text_true))
     print(len(text_pred))
     print(len(probs))
+    print(len(true_probs))
      
  
-    outdict = {"id": ids, "true_labels": text_true, "predicted_labels": text_pred, "prob" : probs}
+    outdict = {"id": ids, "true_labels": text_true, "predicted_labels": text_pred, "prob" : probs, "true_probs" : true_probs}
 
     outdf = pd.DataFrame(outdict)
+   
+    outdf = outdf.sort_values(by=['true_probs'],  ascending=False)
+
     print(outdf)
  
     outdf_path = model_path + "/output_predictions_" + name + ".csv"
     outdf.to_csv(outdf_path)
 
-    precision, recall, thresholds = precision_recall_curve(y_true, y_scores)
+    precision, recall, thresholds = precision_recall_curve(true_labels, true_probs)
+    print(precision)
+    print(recall)
+    thresholds = np.concatenate(([0], thresholds))
+    print(thresholds)
+ 
+
     prdict = {"precision" : precision, "recall" : recall, "threshold": thresholds}
+
+
     prdf= pd.DataFrame(prdict)
     print(prdf)
     prdf_path = model_path + "/output_prcurve_" + name + ".csv"
@@ -199,12 +219,15 @@ def get_eval_args():
 
     parser.add_argument("-maxl", "--maxseqlength", dest = "max_length", type = int, required = False, default = 1024,
                         help="Truncate all sequences to this length (default 1024). Reduce if memory errors")
+    parser.add_argument("-p", "--poslabel", dest = "pos_label", type = str, required = True,
+                        help="The positive label (for pr curves) ex. Chloroplast")
+
 
     args = parser.parse_args()
     return(args)
 
 if __name__ == "__main__":
     args = get_eval_args()
-    get_predictions(args.model_path, args.dataset_path, args.max_length, args.name)
+    get_predictions(args.model_path, args.dataset_path, args.max_length, args.name, args.pos_label)
 
 
