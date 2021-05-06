@@ -79,7 +79,7 @@ def load_dataset(path, max_length):
         return seqs, labels, unmasked, masks
 
 
-def encode_tags(tags, encodings):
+def encode_tags(tags, encodings, tag2id):
     # expands labels to padded length of sequence
     labels = [[tag2id[tag] for tag in doc] for doc in tags]
     encoded_labels = []
@@ -268,9 +268,9 @@ if __name__ == "__main__":
     logging.info(tag2id)
 
 
-    train_labels_encodings = encode_tags(train_labels, train_seqs_encodings)
-    val_labels_encodings = encode_tags(val_labels, val_seqs_encodings)
-    test_labels_encodings = encode_tags(test_labels, test_seqs_encodings)
+    train_labels_encodings = encode_tags(train_labels, train_seqs_encodings, tag2id)
+    val_labels_encodings = encode_tags(val_labels, val_seqs_encodings, tag2id)
+    test_labels_encodings = encode_tags(test_labels, test_seqs_encodings, tag2id)
     logging.info("labels encoded")
 
 

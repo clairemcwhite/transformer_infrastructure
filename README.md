@@ -30,9 +30,14 @@ hf_evaluation.py
  - logger: TODO
 
 hf_predict.py
-
+ - Role potentially filled by hf_interpret. 
  - Apply classification model to new sequences: TODO
  - argparse: TODO
+ - logger: TODO
+
+hf_interpret.py
+ - Apply classification and get aa level explainations
+ - argparse
  - logger: TODO
 
 hf_embed.py       
@@ -74,6 +79,9 @@ hf_predict_aa.py: TODO
  - Apply classification model to new sequences: TODO
  - argparse: TODO
  - logger: TODO
+
+
+
 
 Figure out what to do for interpretibility
 

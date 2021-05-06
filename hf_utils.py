@@ -19,7 +19,7 @@ def parse_fasta(fasta_path, sequence_out, no_spaces):
             seq_spaced = format_sequence(record.seq, no_spaces)
             outstring = "{},{}\n".format(record.id, seq_spaced)
             outfile.write(outstring)
-            sequences.append([record.id, seq_spaced])
+            sequences.append([record.id, record.seq, seq_spaced])
    
    return(sequences)
 
