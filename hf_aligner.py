@@ -120,11 +120,13 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
  
  
 if __name__ == '__main__':
-    # Embedding too focused on same amino acid. 
-    # Try out attentions
+    # Embedding not good on short sequences without context Ex. HEIAI vs. HELAI, will select terminal I for middle I, instead of context match L
+    # Potentially maximize local score? 
+    # Maximize # of matches
+    # How to get sequence info?
     layers = [-4, -3, -2, -1]
     model_name = 'prot_bert_bfd'
-    seqs = ['A A H K C Q T C G K A F N R S S T L N T H A R I H A G N P', 'Y K C K Q C G K A F A R S G G L Q K H K R T H']
+    seqs = ['A A H K C Q T C G K A F N R S S T L N T H A R I H Y A G N P', 'Y K C K Q C G K A F A R S G G L Q K H K R T H']
     #seqs = ['H E A L A I', 'H E A I A L']
 
     seq_names = ['seq1','seq2']
