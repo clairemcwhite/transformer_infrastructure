@@ -21,4 +21,4 @@ nvidia-smi
 
 python -m torch.utils.collect_env
 
-python transformer_infrastructure/hf_classification.py -m prot_bert_bfd/ -tr chloro_loc/chloro_labeledsetTrain.csv -v chloro_loc/chloro_labeledsetVal.csv -te chloro_loc/chloro_labeledsetTest.csv -o /scratch/gpfs/cmcwhite/chloro_loc_model -maxl 1024 -n chloroplast_localization -e 10 -tbsize 1 -vbsize 1
+python transformer_infrastructure/hf_classification.py -m prot_bert_bfd/ -tr /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetTrain.csv -v /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetVal.csv -te /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetTest.csv -o /scratch/gpfs/cmcwhite//scratch/gpfs/cmcwhite/chloro_loc_model/ -maxl 1024 -n chloroplast_localization -e 10 -tbsize 1 -vbsize 1

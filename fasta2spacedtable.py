@@ -1,4 +1,4 @@
-from transformer_notebooks.hf_utils import parse_fasta
+from transformer_infrastructure.hf_utils import parse_fasta
 from Bio import SeqIO
 import argparse
 

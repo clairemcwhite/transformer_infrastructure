@@ -26,18 +26,6 @@ def parse_fasta(fasta_path, sequence_out, no_spaces):
 
 
 ### Classification ###
-class SS3Dataset(Dataset):
-    def __init__(self, encodings, labels):
-        self.encodings = encodings
-        self.labels = labels
-
-    def __getitem__(self, idx):
-        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        item['labels'] = torch.tensor(self.labels[idx])
-        return item
-
-    def __len__(self):
-        return len(self.labels)
 def assemble_SS3_dataset(seqs, labels, tag2id, tokenizer, logging):
 
     labels_encodings = encode_tags(labels, tag2id)

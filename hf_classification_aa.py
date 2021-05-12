@@ -180,7 +180,7 @@ def setup_trainer(epochs, train_batchsize, val_batchsize, outdir, expname):
         run_name=expname,      # experiment name
         seed=3,                         # Seed for experiment reproducibility
         load_best_model_at_end=True,
-        metric_for_best_model="eval_accuracy",
+        metric_for_best_model="eval_precision",
         greater_is_better=True,
     
     )
