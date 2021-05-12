@@ -13,6 +13,7 @@ def embed_sequences(model_path, sequences, pkl_out, pre_embedded):
         print("model loaded")
     else:
         word_embedding_model = models.Transformer(model_path)
+        # Default pooling strategy
         pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension())
 
         model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
@@ -30,11 +31,11 @@ def embed_sequences(model_path, sequences, pkl_out, pre_embedded):
     #Optional: Stop the proccesses in the pool
     model.stop_multi_process_pool(pool)
 
-    
+    if pkl_out:
     #Store sequences & embeddings on disk
-    with open(pkl_out, "wb") as fOut:
-        pickle.dump({'sequences': sequences, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
-    
+        with open(pkl_out, "wb") as fOut:
+            pickle.dump({'sequences': sequences, 'embeddings': embeddings}, fOut, protocol=pickle.HIGHEST_PROTOCOL)
+    return(embeddings)    
     #Load sequences & embeddings from disc
     #with open('embeddings.pkl', "rb") as fIn:
     #    stored_data = pickle.load(fIn)

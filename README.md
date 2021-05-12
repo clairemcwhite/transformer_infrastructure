@@ -15,6 +15,16 @@ hf_util.py
  - Common utilies
  - More to go in here, commonalities between sequence/aa level classification
 
+hf_similarity.py
+ - get similarity scores for fasta of proteins
+ - argparse
+ - logger: TODO
+
+hf_aligner.py
+ - get amino acid similarities 
+
+ 
+
 ### Classify whole sequences
 hf_classification.py
 

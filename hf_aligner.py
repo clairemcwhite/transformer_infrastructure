@@ -103,9 +103,12 @@ def get_seq_edges(seqs, seq_names):
 def get_similarity_network(layers, model_name, seqs, seq_names):
     # Use last four layers by default
     #layers = [-4, -3, -2, -1] if layers is None else layers
+    print("load tokenizer")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    print("load model")
     model = AutoModel.from_pretrained(model_name, output_hidden_states=True)
 
+    print("get hidden states")
     hidden_states = get_hidden_states(seqs, model, tokenizer, layers)
     print(hidden_states.shape)
 

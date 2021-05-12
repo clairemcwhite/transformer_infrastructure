@@ -1,5 +1,7 @@
 from Bio import SeqIO
 import torch
+
+### Sequence formatting
 def format_sequence(sequence, no_spaces):
    if no_spaces:
        seq_spaced = sequence
@@ -8,7 +10,45 @@ def format_sequence(sequence, no_spaces):
 
    return seq_spaced
 
+def parse_fasta(fasta_path, sequence_out, no_spaces):
 
+   sequences = []
+   with open(sequence_out, "w") as outfile:
+
+       for record in SeqIO.parse(fasta_path, "fasta"):
+            #print("%s %i" % (record.id, record.seq))
+            seq_spaced = format_sequence(record.seq, no_spaces)
+            outstring = "{},{}\n".format(record.id, seq_spaced)
+            outfile.write(outstring)
+            sequences.append([record.id, record.seq, seq_spaced])
+   
+   return(sequences)
+
+
+### Classification ###
+class SS3Dataset(Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
+        self.labels = labels
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item['labels'] = torch.tensor(self.labels[idx])
+        return item
+
+    def __len__(self):
+        return len(self.labels)
+
+
+def get_sequencelabel_tags(labels):
+    unique_tags = set(labels)
+    unique_tags  = sorted(list(unique_tags))  # make the order of the labels unchanged
+    tag2id = {tag: id for id, tag in enumerate(unique_tags)}
+    id2tag = {id: tag for tag, id in tag2id.items()}
+    return(tag2d, id2tag)
+
+
+### AA relationships ###
 def get_hidden_states(seqs, model, tokenizer, layers):
     # For a list of sequences, get list of hidden states
     encoded = tokenizer.batch_encode_plus(seqs, return_tensors="pt", padding=True)
@@ -23,20 +63,5 @@ def get_hidden_states(seqs, model, tokenizer, layers):
 
 
     return pooled_output
-
-def parse_fasta(fasta_path, sequence_out, no_spaces):
-
-   sequences = []
-
-   with open(sequence_out, "w") as outfile:
-
-       for record in SeqIO.parse(fasta_path, "fasta"):
-            #print("%s %i" % (record.id, record.seq))
-            seq_spaced = format_sequence(record.seq, no_spaces)
-            outstring = "{},{}\n".format(record.id, seq_spaced)
-            outfile.write(outstring)
-            sequences.append([record.id, record.seq, seq_spaced])
-   
-   return(sequences)
 
 
