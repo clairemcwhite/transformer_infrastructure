@@ -1,6 +1,6 @@
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers_interpret import SequenceClassificationExplainer
-from transformer_notebooks.hf_utils import *
+from transformer_infrastructure.hf_utils import *
 
 import argparse
 import pandas as pd

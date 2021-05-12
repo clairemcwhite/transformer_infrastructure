@@ -38,6 +38,22 @@ class SS3Dataset(Dataset):
 
     def __len__(self):
         return len(self.labels)
+def assemble_SS3_dataset(seqs, labels, tag2id, tokenizer, logging):
+
+    labels_encodings = encode_tags(labels, tag2id)
+    logging.info("labels encoded")
+
+
+    seqs_encodings = seq_tokenizer(seqs, is_split_into_words=True, return_offsets_mapping=True, truncation=True, padding=True)
+
+    _ = seqs_encodings.pop("offset_mapping")
+    logging.info("offset_mapping popped")
+
+
+    dataset = SS3Dataset(seqs_encodings, labels_encodings)
+    logging.info("SS3 dataset constructed")
+
+    return(dataset)
 
 
 def get_sequencelabel_tags(labels):

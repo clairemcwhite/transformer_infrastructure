@@ -20,5 +20,5 @@ nvidia-smi
 
 python -m torch.utils.collect_env
 
-python transformer_notebooks/hf_interpret.py -m /scratch/gpfs/cmcwhite/chloro_loc_model/ -l /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetAll.csv -f /scratch/gpfs/cmcwhite/chloro_loc_model/uniprot_entryname_chlre_UP000006906.fasta -o /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_loc_pred_interpreted.csv
+python transformer_infrastructure/hf_interpret.py -m /scratch/gpfs/cmcwhite/chloro_loc_model/ -l /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetAll.csv -f /scratch/gpfs/cmcwhite/chloro_loc_model/uniprot_entryname_chlre_UP000006906.fasta -o /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_loc_pred_interpreted.csv
  

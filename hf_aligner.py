@@ -1,4 +1,4 @@
-from transformer_notebooks.hf_utils import parse_fasta
+from transformer_infrastructure.hf_utils import parse_fasta
 fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 from sentence_transformers import util
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from transformer_notebooks.hf_utils import get_sequencelabel_tags, SS3Dataset
+from transformer_infrastructure.hf_utils import get_sequencelabel_tags, SS3Dataset
 from torch.utils.data import DataLoader
 from sentence_transformers import losses, util
 from sentence_transformers import LoggingHandler, SentenceTransformer, evaluationfrom sentence_transformers.readers import InputExample
@@ -19,8 +19,8 @@ def get_args():
                         help="Model directory path or name on huggingface. Ex. /path/to/model_dir Rostlab/prot_bert_bfd")
     parser.add_argument("-tr", "--train", dest = "train_path", type = str, required = True, 
                         help="Path to training set, containing columns named sequence,label (csv)")
-    parser.add_argument("-v", "--val", dest = "val_path", type = str, required = True, 
-                        help="Path to validation set (used during training), containing columns named sequence,label (csv)")
+    parser.add_argument("-d", "--dev", dest = "dev_path", type = str, required = True, 
+                        help="Path to dev/validation set (used during training), containing columns named sequence,label (csv)")
     parser.add_argument("-te", "--test", dest = "test_path", type = str, required = True, 
                         help="Path to withheld test set (used after training), containing columns named sequence,label (csv)")
     parser.add_argument("-o", "--outdir", dest = "outdir", type = str, required = True, 
@@ -33,7 +33,7 @@ def get_args():
                         help="Number of epochs. Increasing can help if memory error")
     parser.add_argument("-tbsize", "--train_batchsize", dest = "train_batchsize", type = int, required = False, default = 10, 
                         help="Per device train batchsize. Reduce along with val batch size if memory error")
-    parser.add_argument("-vbsize", "--val_batchsize", dest = "val_batchsize", type = int, required = False, default = 10, 
+    parser.add_argument("-vbsize", "--dev_batchsize", dest = "dev_batchsize", type = int, required = False, default = 10, 
                         help="Per device validation batchsize. Reduce if memory error")
 
   
@@ -41,18 +41,23 @@ def get_args():
     return(args)
 
 
-def load_dataset(path, max_length):
+def load_dataset(path, max_length, label_column):
         df  = pd.read_csv(path)
       
-        df['seq_fixed'] = ["".join(seq.split()) for seq in df['sequence']]
-        df['seq_fixed'] = [re.sub(r"[UZOB]", "X", seq) for seq in df['seq_fixed']]
-        seqs = [ list(seq)[:max_length-2] for seq in df['seq_fixed']]
+        df['seq1_fixed'] = ["".join(seq.split()) for seq in df['sequence1']]
+        df['seq1_fixed'] = [re.sub(r"[UZOB]", "X", seq) for seq in df['seq1_fixed']]
+        seqs1 = [ list(seq)[:max_length-2] for seq in df['seq1_fixed']]
 
-        labels = list(df['label'])
+        df['seq2_fixed'] = ["".join(seq.split()) for seq in df['sequence2']]
+        df['seq2_fixed'] = [re.sub(r"[UZOB]", "X", seq) for seq in df['seq2_fixed']]
+        seqs2 = [ list(seq)[:max_length-2] for seq in df['seq2_fixed']]
 
-        ids = list(df['id'])
-        assert len(seqs) == len(labels) == len(ids)
-        return seqs, labels, ids
+        labels = list(df[label_column]) # ex. label
+
+        id1s = list(df['id1'])
+        id2s = list(df['id1'])
+        assert len(seqs1) == len(seqs2) == len(labels) == len(ids1) == len(ids2)
+        return seqs1, seqs2, labels, ids1, ids2
 
 
 def encode_tags(tags, tag2id):
@@ -69,7 +74,7 @@ if __name__ == "__main__":
     #max_length = 1024
     #train_path = '/home/jupyter/chloro_loc/chloro_labeledsetTrain.csv'
     #test_path = '/home/jupyter/chloro_loc/chloro_labeledsetTest.csv'
-    #val_path = '/home/jupyter/chloro_loc/chloro_labeledsetVal.csv'
+    #dev_path = '/home/jupyter/chloro_loc/chloro_labeledsetVal.csv'
     #   if args.n_gpu > 1#:
     #    model = torch.nn.DataParallel(model)
 
@@ -79,7 +84,7 @@ if __name__ == "__main__":
     max_length = args.max_length
     train_path = args.train_path
     test_path = args.test_path
-    val_path = args.val_path
+    dev_path = args.dev_path
 
     log_format = "%(asctime)s::%(levelname)s::%(name)s::"\
              "%(filename)s::%(lineno)d::%(message)s"
@@ -96,47 +101,38 @@ if __name__ == "__main__":
     epochs = args.epochs
     checkpoint = args.checkpoint
     train_batchsize = args.train_batchsize
-    val_batchsize = args.val_batchsize
+    dev_batchsize = args.dev_batchsize
  
-
-    train_seqs, train_labels, train_ids = load_dataset(train_path, max_length)
-    val_seqs, val_labels, val_ids = load_dataset(test_path, max_length)
-    test_seqs, test_labels, test_ids = load_dataset(val_path, max_length)
+    #return seqs1, seqs2, labels, ids1, ids2
+    train_seqs1, train_seqs2, train_labels, train_ids1, train_ids2 = load_dataset(train_path, max_length)
+    dev_seqs1, dev_seqs2, dev_labels, dev_ids1, dev_ids2 = load_dataset(dev_path, max_length)
+    test_seqs1, test_seqs2, test_labels, test_ids1, test_ids2 = load_dataset(test_path, max_length)
 
     logging.info("datasets loaded")
 
 
     # Consider each label as a tag for each token
- 
-    tag2id, id2tag = get_sequencelabel_tag(train_labels)
+    
+    #tag2id, id2tag = get_sequencelabel_tag(train_labels)
 
-    logging.info("id2tag")
-    logging.info(id2tag)
-    logging.info("tag2id")
-    logging.info(tag2id)
+    #logging.info("id2tag")
+    #logging.info(id2tag)
+    #logging.info("tag2id")
+    #logging.info(tag2id)
+     
 
-    seq_tokenizer = BertTokenizerFast.from_pretrained(model_name, do_lower_case=False)
-    logging.info("sequences tokenizer loaded")
+    #labels_encodings = encode_tags(labels, tag2id)
+    train_samples = []
+    for i in range(len(train_seqs1)):
+         if train_label_encodings[i] == 1:
+            train_samples.append(InputExample(texts=[train_seqs1[i], train_seqs2[i], train_labels[i]))
+
+    train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=train_batch_size)  
 
 
-def assemble_SS3_dataset(seqs, labels, tag2id, tokenizer, logging):
-    labels_encodings = encode_tags(labels, tag2id)
-    logging.info("labels encoded")
-
-
-    seqs_encodings = seq_tokenizer(seqs, is_split_into_words=True, return_offsets_mapping=True, truncation=True, padding=True)
-
-    _ = seqs_encodings.pop("offset_mapping")
-    logging.info("offset_mapping popped")
-  
-
-    dataset = SS3Dataset(seqs_encodings, labels_encodings)
-    logging.info("SS3 dataset constructed")
-
-    return(dataset)
-
-    train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=train_batch_size)  
     train_loss = losses.MultipleNegativesRankingLoss(model)
+
+    # Set up a set of different performatnce evaluators
  
     evaluators = []
    
@@ -144,17 +140,40 @@ def assemble_SS3_dataset(seqs, labels, tag2id, tokenizer, logging):
     # Given (quesiton1, question2), is this a duplicate or not?
     # The evaluator will compute the embeddings for both questions and then compute
     # a cosine similarity. If the similarity is above a threshold, we have a duplicate.
+    binary_acc_evaluator = evaluation.BinaryClassificationEvaluator(dev_seqs1, dev_seqs2, dev_labels)
+    evaluators.append(binary_acc_evaluator)
  
     binary_acc_evaluator = evaluation.BinaryClassificationEvaluator(train_sequences1, train_sequences2, train_labels)
    evaluators.append(binary_acc_evaluator)
-    
-
-    logging.info("trainer initiated")
    
-    if args.checkpoint:
-        trainer.train(checkpoint)
-    else:
-        trainer.train()
+   logging.info("binary acc evaluator added")
+   dev_seq_dict = {}
+   dev_duplicates = []
+
+   # create dict of id:seq
+   for i in range(len(dev_seqs1)):
+      dev_seq_dict[dev_ids1] = dev_seqs1
+      dev_seq_dict[dev_ids2] = dev_seqs2
+   # Create pairs list of duplicate ids
+   for i in range(len(dev_seqs1)):
+      if dev_labels[i] == 1:
+        dev_duplicates.append([dev_ids1[i], dev_ids2[i])
+
+
+    # The ParaphraseMiningEvaluator computes the cosine similarity between all sentences and
+    # extracts a list with the pairs that have the highest similarity. Given the duplicate
+    # information in dev_duplicates, it then computes and F1 score how well our duplicate mining worked
+    paraphrase_mining_evaluator = evaluation.ParaphraseMiningEvaluator(dev_seq_dict, dev_duplicates, name='dev', show_progress_bar = True)
+    evaluators.append(paraphrase_mining_evaluator)
+
+    logging.info("paraphrase evaluator added")
+   
+    seq_evaluator = evaluation.SequentialEvaluator(evaluators, main_score_function=lambda scores: scores[-1])
+
+
+    logger.info("Evaluate model without training")
+    seq_evaluator(model, epoch=0, steps=0, output_path=model_save_path)
+
 
 
     logging.info("training complete")
@@ -166,7 +185,7 @@ def assemble_SS3_dataset(seqs, labels, tag2id, tokenizer, logging):
 
 
     get_predictions(outdir, test_path, len(tag2id), max_length, "withheldtest")
-    get_predictions(outdir, val_path, len(tag2id), max_length, "val")
+    get_predictions(outdir, dev_path, len(tag2id), max_length, "val")
     get_predictions(outdir, train_path, len(tag2id), max_length, "train")
     #test_predictions, test_label_ids, test_metrics = trainer.predict(test_dataset)
     #logging.info("test metrics (withheld)")
@@ -181,11 +200,11 @@ def assemble_SS3_dataset(seqs, labels, tag2id, tokenizer, logging):
     #np.savetxt(outtrain, train_predictions, delimiter=',')
 
 
-    #val_predictions, val_label_ids, val_metrics = trainer.predict(val_dataset)
+    #dev_predictions, dev_label_ids, dev_metrics = trainer.predict(dev_dataset)
     #logging.info("val metrics (seen during training)")
-    #logging.info(val_metrics)
-    #outval  = outdir + "/" + expname + "_val_predictions.csv"
-    #np.savetxt(outval, val_predictions, delimiter=',')
+    #logging.info(dev_metrics)
+    #outval  = outdir + "/" + expname + "_dev_predictions.csv"
+    #np.savetxt(outval, dev_predictions, delimiter=',')
 
  
 

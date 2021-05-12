@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from transformer_notebooks.hf_classification_aa import *
+from transformer_infrastructure.hf_classification_aa import *
 
  
 from transformers import AutoConfig

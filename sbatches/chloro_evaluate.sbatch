@@ -22,8 +22,8 @@ nvidia-smi
 python -m torch.utils.collect_env
 
 
-python transformer_notebooks/hf_evaluation.py -m /scratch/gpfs/cmcwhite/chloro_loc_model/ -l /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetTest.csv -s Test -maxl 1024 -p Chloroplast
+python transformer_infrastructure/hf_evaluation.py -m /scratch/gpfs/cmcwhite/chloro_loc_model/ -l /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetTest.csv -s Test -maxl 1024 -p Chloroplast
 
-python transformer_notebooks/hf_evaluation.py -m /scratch/gpfs/cmcwhite/chloro_loc_model/ -l /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetVal.csv -s Val -maxl 1024 -p Chloroplast
+python transformer_infrastructure/hf_evaluation.py -m /scratch/gpfs/cmcwhite/chloro_loc_model/ -l /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetVal.csv -s Val -maxl 1024 -p Chloroplast
 
-python transformer_notebooks/hf_evaluation.py -m /scratch/gpfs/cmcwhite/chloro_loc_model/ -l /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetTrain.csv -s Train -maxl 1024 -p Chloroplast
+python transformer_infrastructure/hf_evaluation.py -m /scratch/gpfs/cmcwhite/chloro_loc_model/ -l /scratch/gpfs/cmcwhite/chloro_loc_model/chloro_labeledsetTrain.csv -s Train -maxl 1024 -p Chloroplast

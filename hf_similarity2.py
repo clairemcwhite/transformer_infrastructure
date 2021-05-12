@@ -1,5 +1,5 @@
-from transformer_notebooks.hf_utils import parse_fasta, get_hidden_states
-from transformer_notebooks.hf_embed import embed_sequences
+from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states
+from transformer_infrastructure.hf_embed import embed_sequences
 import pandas as pd
 
 from sentence_transformers import util
