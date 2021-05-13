@@ -52,12 +52,12 @@ def validation(dataloader, model, device_, true_index):
   true_labels = []
   predictions_max = []
   predictions_probs = []
-  predictions_trueprobs = []
+  predictions_posprobs = []
   #total loss for this epoch.
   total_loss = 0
  
   # Put the model in evaluation mode--the dropout layers behave differently
-  # during evaluation.
+  # during evalua/tion.
   model.to(device_)
 
   model.eval()
@@ -115,21 +115,21 @@ def validation(dataloader, model, device_, true_index):
         # Probability_pairs tructure for aa-level predictions
         # [[[0.1,0.9], [0.3,0.7]], [[]]]
         probabilities = [[max(y) for y in x] for x in probabilities_pairs]
-        true_probs = [[y[true_index] for y in x] for x in probabilities_pairs]
+        pos_probs = [[y[true_index] for y in x] for x in probabilities_pairs]
 
 
 
         probabilities_flat = np.array(probabilities).flatten().tolist()
-        true_probs_flat =  np.array(true_probs).flatten().tolist()
+        pos_probs_flat =  np.array(pos_probs).flatten().tolist()
  
         # update list
         predictions_labels += predict_content
         predictions_probs += probabilities_flat
-        predictions_trueprobs += true_probs_flat
+        predictions_posprobs += pos_probs_flat
 
 
   # Return all true labels and prediciton for future evaluations.
-  return true_labels, predictions_labels, predictions_probs, predictions_trueprobs
+  return true_labels, predictions_labels, predictions_probs, predictions_posprobs
 
 
 def get_predictions(model_path, dataset_path, max_length, name, pos_label):
@@ -157,8 +157,11 @@ def get_predictions(model_path, dataset_path, max_length, name, pos_label):
     #common
     tag2id = {tag: id for id, tag in enumerate(unique_tags)}
     id2tag = {id: tag for tag, id in tag2id.items()}
+    print(tag2id)
+    print(id2tag)
 
-
+    print(tag2id)
+    print(id2tag)
 
 
 
@@ -174,19 +177,36 @@ def get_predictions(model_path, dataset_path, max_length, name, pos_label):
    
     pos_index = tag2id[pos_label]
  
-    true_labels, predictions_labels, probs, true_probs = validation(dataloader, model, device, pos_index)
+    true_labels, predictions_labels, probs, pos_probs = validation(dataloader, model, device, pos_index)
 
+    print(len(true_labels))
+    print(len(predictions_labels))
+ 
+    true_labels_trimmed = []
+    predictions_labels_trimmed = []
+    pos_probs_trimmed = []
+    probs_trimmed = []
 
-
+    # Removed masked positions
+    for i in range(len(true_labels)):
+        if true_labels[i] == -100:
+           continue
+        else:      
+           true_labels_trimmed.append(true_labels[i])
+           predictions_labels_trimmed.append(predictions_labels[i])
+           pos_probs_trimmed.append(pos_probs[i])
+           probs_trimmed.append(probs[i])
+    
 
  
-    print(classification_report(true_labels, predictions_labels))
+    print(classification_report(true_labels_trimmed, predictions_labels_trimmed))
    
 
     print(id2tag)
 
-    text_true = [id2tag[x] for x in true_labels]
-    text_pred = [id2tag[x] for x in predictions_labels]
+    text_true = [id2tag[x] for x in true_labels_trimmed]
+    text_pred = [id2tag[x] for x in predictions_labels_trimmed]
+
     conf = confusion_matrix(text_true, text_pred)
     print(conf)
     outconf = model_path + "/output_confusion_" + name + ".csv"
@@ -195,19 +215,19 @@ def get_predictions(model_path, dataset_path, max_length, name, pos_label):
 
     print(len(text_true))
     print(len(text_true))
-    print(len(probs))
-    print(len(true_probs)) 
-    outdict = {"true_labels": text_true, "predicted_labels": text_pred, "prob" : probs, "true_probs" : true_probs}
+    print(len(probs_trimmed))
+    print(len(pos_probs_trimmed)) 
+    outdict = {"true_labels": text_true, "predicted_labels": text_pred, "prob" : probs_trimmed, "pos_probs" : pos_probs_trimmed}
 
     outdf = pd.DataFrame(outdict)
    
-    outdf = outdf.sort_values(by=['true_probs'],  ascending=False)
+    outdf = outdf.sort_values(by=['pos_probs'],  ascending=False)
 
  
     outdf_path = model_path + "/output_predictions_" + name + ".csv"
     outdf.to_csv(outdf_path)
 
-    precision, recall, thresholds = precision_recall_curve(true_labels, true_probs)
+    precision, recall, thresholds = precision_recall_curve(true_labels_trimmed, pos_probs_trimmed)
     print(precision)
     print(recall)
     thresholds = np.concatenate(([0], thresholds))

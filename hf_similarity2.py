@@ -12,7 +12,6 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
 import logging
-print("are we loading libraries??")
 #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 
 def get_seqsim_args():
@@ -30,6 +29,8 @@ def get_seqsim_args():
                         help="Flag if sequences already have spaces")
 
     parser.add_argument("-o", "--outfile", dest = "outfile", type = str, required = True,
+                        help="output csv for table of word attributions")
+    parser.add_argument("-a", "--allbyall", dest = "allbyall", action = "store_true", required = True,
                         help="output csv for table of word attributions")
 
 
@@ -50,6 +51,7 @@ def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, loggin
     #x = [l[i:i + n] for i in range(0, len(l), n)] 
     #logging.info(x)
     #seqs_list = np.array_split(lst, 5)
+
     cls_hidden_states = embed_sequences(model_path, seqs, False, False)
     logging.info(cls_hidden_states.shape)
     
@@ -74,8 +76,12 @@ def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, loggin
     print(cls_hidden_states)
     logging.info("post_hidden")
    
-    # Very fast for 1000x1000 
-    cosine_scores =  util.pytorch_cos_sim(cls_hidden_states, cls_hidden_states)
+    if allbyall:
+        # Very fast for 1000x1000 
+        cosine_scores =  util.pytorch_cos_sim(cls_hidden_states, cls_hidden_states)
+
+
+
     logging.info(cosine_scores)
 
     pairs = []

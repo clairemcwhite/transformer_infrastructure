@@ -4,20 +4,22 @@
 import torch
 from torch.utils.data import DataLoader
 from sentence_transformers import losses, util
-from sentence_transformers import LoggingHandler, SentenceTransformer, evaluation
+from sentence_transformers import LoggingHandler, SentenceTransformer, models, evaluation
 from sentence_transformers.readers import InputExample
 import logging
 #from datetime import datetime
 #import csv
 import os
+import pandas as pd
 #from zipfile import ZipFile
 import random
 import argparse
+import re
 
 def get_args():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--model", dest = "model_name", type = str, required = True, 
+    parser.add_argument("-m", "--model", dest = "model_path", type = str, required = True, 
                         help="Model directory path or name on huggingface. Ex. /path/to/model_dir Rostlab/prot_bert_bfd")
     parser.add_argument("-tr", "--train", dest = "train_path", type = str, required = True, 
                         help="Path to training set, containing columns named sequence1,sequence2,id1,id2,label (set label colname with --label_col) (csv)")
@@ -58,8 +60,8 @@ def load_dataset_pairs(path, max_length, label_column):
 
         labels = list(df[label_column]) # ex. label
 
-        id1s = list(df['id1'])
-        id2s = list(df['id1'])
+        ids1 = list(df['id1'])
+        ids2 = list(df['id1'])
         assert len(seqs1) == len(seqs2) == len(labels) == len(ids1) == len(ids2)
         return seqs1, seqs2, labels, ids1, ids2
 
@@ -76,12 +78,13 @@ if __name__ == "__main__":
 
     args = get_args()
 
-    model_name = args.model_name
+    model_path = args.model_path
     max_length = args.max_length
     train_path = args.train_path
     test_path = args.test_path
     dev_path = args.dev_path
 
+    label_column = args.label_col
     log_format = "%(asctime)s::%(levelname)s::%(name)s::"\
              "%(filename)s::%(lineno)d::%(message)s"
 
@@ -101,21 +104,33 @@ if __name__ == "__main__":
     dev_batchsize = args.dev_batchsize
  
     #return seqs1, seqs2, labels, ids1, ids2
-    train_seqs1, train_seqs2, train_labels, train_ids1, train_ids2 = load_dataset_pairs(train_path, max_length)
-    dev_seqs1, dev_seqs2, dev_labels, dev_ids1, dev_ids2 = load_dataset_pairs(dev_path, max_length)
-    test_seqs1, test_seqs2, test_labels, test_ids1, test_ids2 = load_dataset_pairs(test_path, max_length)
+    train_seqs1, train_seqs2, train_labels, train_ids1, train_ids2 = load_dataset_pairs(train_path, max_length, label_column)
+    dev_seqs1, dev_seqs2, dev_labels, dev_ids1, dev_ids2 = load_dataset_pairs(dev_path, max_length, label_column)
+    test_seqs1, test_seqs2, test_labels, test_ids1, test_ids2 = load_dataset_pairs(test_path, max_length, label_column)
 
     logging.info("datasets loaded")
 
 
-    
+
+    #train_examples = [InputExample(texts=['My first sentence', 'My second sentence'], label=0.8),
+    #InputExample(texts=['Another pair', 'Unrelated sentence'], label=0.3)]
+    #train_dataloader = DataLoader(train_examples, shuffle=True, batch_size=16)    
     #labels_encodings = encode_tags(labels, tag2id)
     train_samples = []
     for i in range(len(train_seqs1)):
-         if train_label_encodings[i] == 1:
-            train_samples.append(InputExample(texts=[train_seqs1[i], train_seqs2[i], train_labels[i]]))
+         if train_labels[i] == 1:
+            train_samples.append(InputExample(texts=[train_seqs1[i], train_seqs2[i]], label = train_labels[i]))
 
-    train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=train_batch_size)  
+    train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=train_batchsize)  
+
+    print("Data loaded")
+    # Convert transformer to sentence transformer model
+    word_embedding_model = models.Transformer(model_path)
+    # Default pooling strategy
+    pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension())
+
+    model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
+    print("SentenceTransformer model created")
 
 
     train_loss = losses.MultipleNegativesRankingLoss(model)
@@ -131,7 +146,7 @@ if __name__ == "__main__":
     binary_acc_evaluator = evaluation.BinaryClassificationEvaluator(dev_seqs1, dev_seqs2, dev_labels)
     evaluators.append(binary_acc_evaluator)
  
-    binary_acc_evaluator = evaluation.BinaryClassificationEvaluator(train_sequences1, train_sequences2, train_labels)
+    binary_acc_evaluator = evaluation.BinaryClassificationEvaluator(train_seqs1, train_seqs2, train_labels)
     evaluators.append(binary_acc_evaluator)
    
     logging.info("binary acc evaluator added")
@@ -140,8 +155,8 @@ if __name__ == "__main__":
 
     # create dict of id:seq
     for i in range(len(dev_seqs1)):
-       dev_seq_dict[dev_ids1] = dev_seqs1
-       dev_seq_dict[dev_ids2] = dev_seqs2
+       dev_seq_dict[dev_ids1[i]] = dev_seqs1[i]
+       dev_seq_dict[dev_ids2[i]] = dev_seqs2[i]
     # Create pairs list of duplicate ids
     for i in range(len(dev_seqs1)):
        if dev_labels[i] == 1:
@@ -159,12 +174,12 @@ if __name__ == "__main__":
     seq_evaluator = evaluation.SequentialEvaluator(evaluators, main_score_function=lambda scores: scores[-1])
 
     os.makedirs(outdir, exist_ok=True)
-    logger.info("Evaluate model without training")
+    logging.info("Evaluate model without training")
     seq_evaluator(model, epoch=0, steps=0, output_path=outdir)
 
     model.fit(train_objectives=[(train_dataloader, train_loss)],
           evaluator=seq_evaluator,
-          epochs=num_epochs,
+          epochs=epochs,
           warmup_steps=1000,
           output_path=outdir
           )
