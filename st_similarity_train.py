@@ -47,16 +47,18 @@ def get_args():
 
 
 def load_dataset_pairs(path, max_length, label_column):
-
+        # Need to join sequences back
         df  = pd.read_csv(path)
-      
+        print(df.head)      
         df['seq1_fixed'] = ["".join(seq.split()) for seq in df['sequence1']]
         df['seq1_fixed'] = [re.sub(r"[UZOB]", "X", seq) for seq in df['seq1_fixed']]
         seqs1 = [ list(seq)[:max_length-2] for seq in df['seq1_fixed']]
+        seqs1 = [ ' '.join(seq) for seq in seqs1]
 
         df['seq2_fixed'] = ["".join(seq.split()) for seq in df['sequence2']]
         df['seq2_fixed'] = [re.sub(r"[UZOB]", "X", seq) for seq in df['seq2_fixed']]
         seqs2 = [ list(seq)[:max_length-2] for seq in df['seq2_fixed']]
+        seqs2 = [ ' '.join(seq) for seq in seqs2]
 
         labels = list(df[label_column]) # ex. label
 
@@ -107,6 +109,10 @@ if __name__ == "__main__":
     train_seqs1, train_seqs2, train_labels, train_ids1, train_ids2 = load_dataset_pairs(train_path, max_length, label_column)
     dev_seqs1, dev_seqs2, dev_labels, dev_ids1, dev_ids2 = load_dataset_pairs(dev_path, max_length, label_column)
     test_seqs1, test_seqs2, test_labels, test_ids1, test_ids2 = load_dataset_pairs(test_path, max_length, label_column)
+    print(train_seqs1[0])
+    print(dev_seqs1[0])
+
+
 
     logging.info("datasets loaded")
 
@@ -154,15 +160,17 @@ if __name__ == "__main__":
     dev_duplicates = []
 
     # create dict of id:seq
-    for i in range(len(dev_seqs1)):
+    #for i in range(len(dev_seqs1)):
+    for i in range(0,5):
        dev_seq_dict[dev_ids1[i]] = dev_seqs1[i]
        dev_seq_dict[dev_ids2[i]] = dev_seqs2[i]
     # Create pairs list of duplicate ids
-    for i in range(len(dev_seqs1)):
+    for i in range(0,5):
+    #for i in range(len(dev_seqs1)):
        if dev_labels[i] == 1:
          dev_duplicates.append([dev_ids1[i], dev_ids2[i]])
-
-
+    print(dev_seq_dict)
+    print(dev_duplicates)
     # The ParaphraseMiningEvaluator computes the cosine similarity between all sentences and
     # extracts a list with the pairs that have the highest similarity. Given the duplicate
     # information in dev_duplicates, it then computes and F1 score how well our duplicate mining worked

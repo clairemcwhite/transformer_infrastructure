@@ -1,7 +1,7 @@
 from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states
 from transformer_infrastructure.hf_embed import embed_sequences
 import pandas as pd
-
+import time
 from sentence_transformers import util
 
 from Bio import SeqIO
@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
 import logging
+import faiss
 #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 
 def get_seqsim_args():
@@ -30,15 +31,17 @@ def get_seqsim_args():
 
     parser.add_argument("-o", "--outfile", dest = "outfile", type = str, required = True,
                         help="output csv for table of word attributions")
-    parser.add_argument("-a", "--allbyall", dest = "allbyall", action = "store_true", required = True,
-                        help="output csv for table of word attributions")
+    parser.add_argument("-k", dest = "k", type = int, required = False,
+                        help="If present, limit to k closest sequences")
+    #parser.add_argument("-p", dest = "percent", type = float, required = False,
+    #                    help="If present, limit to top percent similar")
 
 
     args = parser.parse_args()
     return(args)  
 
  
-def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, logging):
+def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, logging, k):
     # Use last four layers by default
     #layers = [-4, -3, -2, -1] if layers is None else layers
     # Add more cpus if memory error. 4cpus/1000 sequences
@@ -52,8 +55,8 @@ def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, loggin
     #logging.info(x)
     #seqs_list = np.array_split(lst, 5)
 
-    cls_hidden_states = embed_sequences(model_path, seqs, False, False)
-    logging.info(cls_hidden_states.shape)
+    enc_hidden_states = embed_sequences(model_path, seqs, False, False)
+    logging.info(enc_hidden_states.shape)
     
     #n = 100
     #seqs_batches = [seqs[i:i + n] for i in range(0, len(seqs), n)]
@@ -67,35 +70,73 @@ def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, loggin
      
         # Get cls embedding as proxy for whole sentence 
     #    logging.info("pre hidden")
-    #    cls_hidden_states_batch = hidden_states[:,0,:]
+    #    enc_hidden_states_batch = hidden_states[:,0,:]
     #    if i == 0:
-    #         cls_hidden_states = cls_hidden_states_batch
+    #         enc_hidden_states = enc_hidden_states_batch
     #    else:
-    #         cls_hidden_states = torch.cat([cls_hidden_states, cls_hidden_states_batch])
+    #         enc_hidden_states = torch.cat([enc_hidden_states, enc_hidden_states_batch])
 
-    print(cls_hidden_states)
     logging.info("post_hidden")
    
-    if allbyall:
         # Very fast for 1000x1000 
-        cosine_scores =  util.pytorch_cos_sim(cls_hidden_states, cls_hidden_states)
 
+        #start = time.time()
+        # util.pytorch_cos_sim substantially slower than faiss
+        # 10x slower for 5 seqs and 100 seqs 
+        #cosine_scores =  util.pytorch_cos_sim(enc_hidden_states, enc_hidden_states)
+        #end = time.time()
+        #print(end-start)
+        #print(cosine_scores.shape)
+        #else:
+    d = enc_hidden_states.shape[1]
+    print(d)
+    index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)   
+    faiss.normalize_L2(enc_hidden_states)
+    index.add(enc_hidden_states)
 
+    logging.info("start comparison")
+    start = time.time()
+    if k:
+        # Add one, because best hit will be self
+        distance, index = index.search(enc_hidden_states, k + 1)
+    else:
+        num_seqs = enc_hidden_states.shape[0]
+        distance, index = index.search(enc_hidden_states, num_seqs)
 
-    logging.info(cosine_scores)
+    end = time.time()
+    tottime = end - start
+    start = time.time()
+    kmeans = faiss.Kmeans(d=d, k=10, niter=10)
+    kmeans.train(enc_hidden_states)
+    D, I = kmeans.index.search(enc_hidden_states, 1)
+    end = time.time()
+    print(start - end)
+
+    print(D)
+    print(I) 
+    logging.info("compare complete in {} s".format(tottime))
+
 
     pairs = []
     complete = []
     with open(outfile, "w") as o:
-        for i in range(len(cosine_scores)):
-          complete.append(i)
-          for j in range(len(cosine_scores)):
-             if j in complete:
-                 continue
+        for i in range(len(index)):
+            complete.append(seq_names[i])
+            row =index[i]
+            for j in range(len(row)):
+              if seq_names[row[j]] in complete:
+                continue
+              #print(i, row[j], seq_names[i], seq_names[row[j]], distance[i,j])
+              o.write("{}\t{}\t{}\n".format(seq_names[i], seq_names[row[j]], distance[i,j]))
+ 
+          #complete.append(i)
+          #for j in range(len(cosine_scores)):
+          #   if j in complete:
+          #       continue
     
-             o.write("{}\t{}\t{}\n".format(seq_names[i], seq_names[j], cosine_scores[i,j]))
+          #   o.write("{}\t{}\t{}\n".format(seq_names[i], seq_names[j], cosine_scores[i,j]))
 
-    
+     
 
     #match_edges = get_wholeseq_similarities(hidden_states, seqs, seq_names)
     
@@ -134,11 +175,12 @@ if __name__ == '__main__':
     #model_path = 'prot_bert_bfd'
     model_path = args.model_path
     outfile = args.outfile
+    k = args.k
     #sqs = ['A A H K C Q T C G K A F N R S S T L N T H A R I H Y A G N P', 'Y K C K Q C G K A F A R S G G L Q K H K R T H']
     #seqs = ['H E A L A I', 'H E A I A L', 'H E E L A H']
 
     #seq_names = ['seq1','seq2', 'seq3']
-    get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, logging)
+    get_sequence_similarity(layers, model_path, seqs[0:100], seq_names[0:100], outfile, logging, k)
 
 
 #input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute")).unsqueeze(0)  # Batch size 1
