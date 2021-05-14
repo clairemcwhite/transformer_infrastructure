@@ -174,8 +174,9 @@ if __name__ == "__main__":
     # The ParaphraseMiningEvaluator computes the cosine similarity between all sentences and
     # extracts a list with the pairs that have the highest similarity. Given the duplicate
     # information in dev_duplicates, it then computes and F1 score how well our duplicate mining worked
-    paraphrase_mining_evaluator = evaluation.ParaphraseMiningEvaluator(dev_seq_dict, dev_duplicates, name='dev', show_progress_bar = True)
-    evaluators.append(paraphrase_mining_evaluator)
+    # not working...
+    #paraphrase_mining_evaluator = evaluation.ParaphraseMiningEvaluator(dev_seq_dict, dev_duplicates, name='dev', show_progress_bar = True)
+    #evaluators.append(paraphrase_mining_evaluator)
 
     logging.info("paraphrase evaluator added")
    
@@ -189,7 +190,8 @@ if __name__ == "__main__":
           evaluator=seq_evaluator,
           epochs=epochs,
           warmup_steps=1000,
-          output_path=outdir
+          output_path=outdir,
+          save_best_model = True
           )
 
 

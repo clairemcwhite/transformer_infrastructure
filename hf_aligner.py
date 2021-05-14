@@ -1,4 +1,5 @@
-from transformer_infrastructure.hf_utils import parse_fasta
+from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, compare_hidden_states
+import faiss
 fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 from sentence_transformers import util
 
@@ -11,26 +12,11 @@ import torch
 from transformers import AutoTokenizer, AutoModel
  
  
- 
- 
-def get_hidden_states(seqs, model, tokenizer, layers):
 
-    encoded = tokenizer.batch_encode_plus(seqs, return_tensors="pt", padding=True)
-    with torch.no_grad():
-        output = model(**encoded)
- 
-    # Get all hidden states
-    hidden_states = output.hidden_states
-    #BramVanroy  https://github.com/huggingface/transformers/issues/1328#issuecomment-534956703
-    #Concatenate final for hidden states into long vector
-    pooled_output = torch.cat(tuple([hidden_states[i] for i in [-4, -3, -2, -1]]), dim=-1)
-
- 
-    return pooled_output
- 
+  
  
 
-def get_matches(hidden_states, seqs,seq_names):
+def get_matches_2(hidden_states, seqs,seq_names):
     """Get a word vector by first tokenizing the input sentence, getting all token idxs
        that make up the word of interest, and then `get_hidden_states
      BramVanroy`."""
@@ -108,16 +94,65 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     print("load model")
     model = AutoModel.from_pretrained(model_name, output_hidden_states=True)
 
-    print("get hidden states")
-    hidden_states = get_hidden_states(seqs, model, tokenizer, layers)
-    print(hidden_states.shape)
 
-    match_edges = get_matches(hidden_states, seqs, seq_names)
     
-    seq_edges = get_seq_edges(seqs, seq_names)
-    all_edges = seq_edges + match_edges 
-    for x in all_edges:
-      print(x)
+
+    print("get hidden states for each seq")
+
+    d = 4096
+    hidden_states_list =[]
+    for seq in seqs:
+       hidden_states = get_hidden_states([seq], model, tokenizer, layers)
+       hidden_states_list.append(hidden_states)
+
+    # Build index from all amino acids 
+    d = hidden_states_list[0][0].shape[1]
+    print(d)
+
+    # Faiss suggested approach is to return more than needed an filter for criteria. 
+    # Need to build easy transfer between index and sequence index
+    
+    # Can we use pure kmeans?
+    # Get cluster with maximum representatives in each sequence, with minimal repitions
+    # N represented seqs/len(cluster)
+    # Starting k = length of longest sequence
+ 
+    index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
+
+    for prot_hidden_states in hidden_states_list:
+        print(prot_hidden_states[0])
+        faiss.normalize_L2(np.array(prot_hidden_states[0]))
+        index.add(np.array(prot_hidden_states[0]))
+
+
+
+    #Will be parallelizable.
+    for i in range(len(hidden_states_list)):
+       query_hs = np.array(hidden_states_list[i])
+       index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
+       index.add(query_hs)
+       for j in range(len(hidden_states_list)):
+          target_hs = np.array(hidden_states_list[j])
+          index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT) 
+          both = faiss.normalize_L2(np.concatenate(query_hs, target_hs))
+          index.add(both)
+
+          for m in range(len(hidden_states_list[i])):
+              query = hidden_states_list[i][m]
+              target = hidden_states_list[j] 
+              D, I = compare_hidden_states(query, target, 2)
+              print(I)
+                  
+
+    # Build strings of matching substrings. 
+ 
+
+    #match_edges = get_matches(hidden_states, seqs, seq_names)
+    
+    #seq_edges = get_seq_edges(seqs, seq_names)
+    #all_edges = seq_edges + match_edges 
+    #for x in all_edges:
+    #  print(x)
 
     return 1
  
@@ -126,13 +161,15 @@ if __name__ == '__main__':
     # Embedding not good on short sequences without context Ex. HEIAI vs. HELAI, will select terminal I for middle I, instead of context match L
     # Potentially maximize local score? 
     # Maximize # of matches
-    # How to get sequence info?
+    # Compute closes embedding of each amino acid in all target sequences
+    # Compute cosine to next amino acid in seq. 
+
     layers = [-4, -3, -2, -1]
     model_name = 'prot_bert_bfd'
-    seqs = ['A A H K C Q T C G K A F N R S S T L N T H A R I H Y A G N P', 'Y K C K Q C G K A F A R S G G L Q K H K R T H']
+    seqs = ['A A H K C Q T C G K A F N R S S T L N T H A R I H Y A G N P', 'Y K C K Q C G K A F A R S G G L Q K H K R T H', 'Y E C K E C G K S F S A H S S L V T H K R T H', 'Y K C E E C G K A F N R S S N L T K H K I I H']
     #seqs = ['H E A L A I', 'H E A I A L']
 
-    seq_names = ['seq1','seq2']
+    seq_names = ['seq1','seq2', 'seq3', 'seq4']
     get_similarity_network(layers, model_name, seqs, seq_names)
 
 

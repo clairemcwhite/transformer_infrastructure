@@ -77,43 +77,10 @@ def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, loggin
     #         enc_hidden_states = torch.cat([enc_hidden_states, enc_hidden_states_batch])
 
     logging.info("post_hidden")
-   
-        # Very fast for 1000x1000 
-
-        #start = time.time()
-        # util.pytorch_cos_sim substantially slower than faiss
-        # 10x slower for 5 seqs and 100 seqs 
-        #cosine_scores =  util.pytorch_cos_sim(enc_hidden_states, enc_hidden_states)
-        #end = time.time()
-        #print(end-start)
-        #print(cosine_scores.shape)
-        #else:
-    d = enc_hidden_states.shape[1]
-    print(d)
-    index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)   
-    faiss.normalize_L2(enc_hidden_states)
-    index.add(enc_hidden_states)
-
-    logging.info("start comparison")
+    logging.info("Start comparison")
     start = time.time()
-    if k:
-        # Add one, because best hit will be self
-        distance, index = index.search(enc_hidden_states, k + 1)
-    else:
-        num_seqs = enc_hidden_states.shape[0]
-        distance, index = index.search(enc_hidden_states, num_seqs)
-
+    distance, index = compare_hidden_states(enc_hidden_states, k) 
     end = time.time()
-    tottime = end - start
-    start = time.time()
-    kmeans = faiss.Kmeans(d=d, k=10, niter=10)
-    kmeans.train(enc_hidden_states)
-    D, I = kmeans.index.search(enc_hidden_states, 1)
-    end = time.time()
-    print(start - end)
-
-    print(D)
-    print(I) 
     logging.info("compare complete in {} s".format(tottime))
 
 
@@ -126,24 +93,13 @@ def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, loggin
             for j in range(len(row)):
               if seq_names[row[j]] in complete:
                 continue
+              name1 = seq_names[i]
+              name2 = seq_names[row[j]]
+              distance = round(distance[i,j], 5)
+              pairs.append([name1, name2, distance]
               #print(i, row[j], seq_names[i], seq_names[row[j]], distance[i,j])
               o.write("{}\t{}\t{}\n".format(seq_names[i], seq_names[row[j]], distance[i,j]))
  
-          #complete.append(i)
-          #for j in range(len(cosine_scores)):
-          #   if j in complete:
-          #       continue
-    
-          #   o.write("{}\t{}\t{}\n".format(seq_names[i], seq_names[j], cosine_scores[i,j]))
-
-     
-
-    #match_edges = get_wholeseq_similarities(hidden_states, seqs, seq_names)
-    
-    #seq_edges = get_seq_edges(seqs, seq_names)
-    #all_edges = seq_edges + match_edges 
-    #for x in all_edges:
-    #  print(x)
 
     return 1
  

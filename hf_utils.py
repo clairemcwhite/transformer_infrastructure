@@ -52,6 +52,51 @@ def get_sequencelabel_tags(labels):
     return(tag2d, id2tag)
 
 
+
+### Similarity
+def build_index(hidden_states):
+
+    d = hidden_states.shape[1]
+    index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
+    faiss.normalize_L2(allhidden_states)
+    index.add(hidden_states)
+    return(index)
+
+
+def compare_hidden_states(hidden_states_a, hidden_states_b, k):
+    '''
+    Get cosine similarity(?) between sets of embeddings
+    If k, limit to k closest matches for each embedding
+    Returns distances and indices
+    About 10x faster than sentence_transformer util.pytorch_cos_sim
+    '''
+    if hidden_states_a == hidden_states_b:
+       all_hidden_states = hidden_states_a 
+       
+
+    index = build_index(all_hidden_states)
+
+    logging.info("start comparison")
+    if k:
+        # Return k closests seqs. Add one, because best hit will be self
+        distance, index = index.search(hidden_states, k + 1)
+    else:
+        num_seqs = hidden_states.shape[0]
+        D, I = index.search(hidden_states, num_seqs)
+
+    return(D, I)
+
+def kmeans_hidden_states(hidden_states, k):
+    '''
+    Return kmeans clusters for set of embeddings 
+    D = distance to centroid
+    I = index of cluster
+    '''
+    kmeans = faiss.Kmeans(d=d, k=10, niter=10)
+    kmeans.train(hidden_states)
+    D, I = kmeans.index.search(hidden_states, 1)
+    return(D, I)
+
 ### AA relationships ###
 def get_hidden_states(seqs, model, tokenizer, layers):
     # For a list of sequences, get list of hidden states

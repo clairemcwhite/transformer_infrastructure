@@ -21,7 +21,7 @@ import time
 def pair_metric(embeddings, threshold=0.8):
 
 
-    cos_scores = util.pytorch_cos_sim(embeddings[5], embeddings)
+    cos_scores = util.pytorch_cos_sim(embeddings, embeddings)
     print(cos_scores.shape)
     print(cos_scores[0])
     print(cos_scores[1])
@@ -32,11 +32,12 @@ def community_detection(embeddings, threshold=0.75, min_community_size=25, init_
     Finds in the embeddings all communities, i.e. embeddings that are close (closer than threshold).
     Returns only communities that are larger than min_community_size. The communities are returned
     in decreasing order. The first element in each list is the central point in the community.
+    # Slow, deprecated
     """
 
     # Compute cosine similarity scores
     start_time = time.time()
-    cos_scores = util.pytorch_cos_sim(embeddings[0:1000], embeddings)
+    cos_scores = util.pytorch_cos_sim(embeddings, embeddings)
     print("Compare after {:.2f} sec".format(time.time() - start_time))    
     print(cos_scores.shape)
     print(cos_scores[0])

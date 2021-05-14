@@ -41,7 +41,7 @@ def get_args():
                         help="Per device train batchsize. Reduce along with val batch size if memory error")
     parser.add_argument("-vbsize", "--val_batchsize", dest = "val_batchsize", type = int, required = False, default = 10, 
                         help="Per device validation batchsize. Reduce if memory error")
-    parser.add_argument("-u", "--unmask", dest = "unmask", action="store_true", required = False, 
+    parser.add_argument("-nm", "--nomask", dest = "nomask", action="store_true", required = False, 
                         help="If present, use all amino acids")
 
  
@@ -81,8 +81,8 @@ def load_dataset(path, max_length):
 
 def encode_tags(tags, encodings, tag2id):
     # expands labels to padded length of sequence
-    labels = [[tag2id[tag] for tag in doc] for doc in tags]
     encoded_labels = []
+    labels = [[tag2id[tag] for tag in doc] for doc in tags]
     for doc_labels, doc_offset in zip(labels, encodings.offset_mapping):
         # create an empty array of -100
         doc_enc_labels = np.ones(len(doc_offset),dtype=int) * -100
@@ -193,7 +193,7 @@ def mask_disorder(labels, masks):
       if disorder == "0.0":
         #shift by one because of the CLS token at index 0
         label[i+1] = -100
-
+   
 
 
 if __name__ == "__main__":
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     train_path = args.train_path
     test_path = args.test_path
     val_path = args.val_path
-    unmask = args.unmask
+    nomask = args.nomask
 
     log_format = "%(asctime)s::%(levelname)s::%(name)s::"\
              "%(filename)s::%(lineno)d::%(message)s"
@@ -234,10 +234,10 @@ if __name__ == "__main__":
     val_seqs, val_labels, val_unmask, val_mask = load_dataset(test_path, max_length)
     test_seqs, test_labels, test_mask, test_unmask = load_dataset(val_path, max_length)
 
-    if unmask == True:
-        train_mask = train_unmask
-        val_mask = val_unmask
-        test_mask = test_unmask
+    #if nomask == True:
+    #    train_mask = train_unmask
+    #    val_mask = val_unmask
+    #    test_mask = test_unmask
      
       
 
@@ -273,10 +273,10 @@ if __name__ == "__main__":
     test_labels_encodings = encode_tags(test_labels, test_seqs_encodings, tag2id)
     logging.info("labels encoded")
 
-
-    mask_disorder(train_labels_encodings, train_mask)
-    mask_disorder(val_labels_encodings, val_mask)
-    mask_disorder(test_labels_encodings, test_mask)
+    if not nomask:
+        mask_disorder(train_labels_encodings, train_mask)
+        mask_disorder(val_labels_encodings, val_mask)
+        mask_disorder(test_labels_encodings, test_mask)
 
     # Don't want to pass to model
     _ = train_seqs_encodings.pop("offset_mapping")
