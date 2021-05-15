@@ -191,9 +191,9 @@ if __name__ == "__main__":
           epochs=epochs,
           warmup_steps=1000,
           output_path=outdir,
-          save_best_model = True
+          save_best_model = True,
           )
-
+    model.save(outdir)
 
 
 

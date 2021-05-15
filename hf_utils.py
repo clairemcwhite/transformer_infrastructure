@@ -1,6 +1,7 @@
 from Bio import SeqIO
 import torch
-
+import faiss
+import numpy as np
 ### Sequence formatting
 def format_sequence(sequence, no_spaces):
    if no_spaces:
@@ -86,14 +87,45 @@ def compare_hidden_states(hidden_states_a, hidden_states_b, k):
 
     return(D, I)
 
+def kmeans_hidden_states_aas(hidden_states_list, k):
+    '''
+    Return kmeans clusters for set of embeddings 
+    D = distance to centroid
+    I = index of cluster
+    '''
+    print(hidden_states_list.shape)
+    hidden_states = np.concatenate([hidden_states_list])
+    print(hidden_states)
+    print(hidden_states.shape)
+    d = hidden_states.shape[1]
+    kmeans = faiss.Kmeans(d = d, k = k, niter = 10)
+    kmeans.train(hidden_states)
+    D, I = kmeans.index.search(hidden_states, 1)
+    return(D, I)
+
+    # Do this per sequence, will get seq-specific path w/o keeping track 
+    #for prot in hidden_states:
+    #    print("prolurm-6359369.out")
+    #    print(prot)
+    #    D, I = kmeans.index.search([prot], 1)
+    #    print(I)
+    #return(D, I)
+
+
 def kmeans_hidden_states(hidden_states, k):
     '''
     Return kmeans clusters for set of embeddings 
     D = distance to centroid
     I = index of cluster
     '''
-    kmeans = faiss.Kmeans(d=d, k=10, niter=10)
+    print(hidden_states)
+    print(hidden_states.shape)
+    d = hidden_states.shape[1]
+    kmeans = faiss.Kmeans(d = d, k = k, niter = 10)
     kmeans.train(hidden_states)
+   
+    # Do this per sequence, will get seq-specific path w/o keeping track
+
     D, I = kmeans.index.search(hidden_states, 1)
     return(D, I)
 
