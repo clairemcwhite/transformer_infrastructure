@@ -143,12 +143,16 @@ def align_predictions(predictions: np.ndarray, label_ids: np.ndarray):
 
 def compute_metrics(p: EvalPrediction):
     preds_list, out_label_list = align_predictions(p.predictions, p.label_ids)
+    tn, fp, fn, tp = confusion_matrix([0, 1, 0, 1], [1, 1, 1, 0]).ravel()
     return {
-        "accuracy": accuracy_score(out_label_list, preds_list),
-        "precision": precision_score(out_label_list, preds_list),
-        "recall": recall_score(out_label_list, preds_list),
-        "f1": f1_score(out_label_list, preds_list),
-    }
+        "accuracy": accuracy_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1),
+        "precision": precision_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1)),
+        "recall": recall_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1)),
+        "f1": f1_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1)),
+        "tp" : tp,
+        "fp" : fp,
+        "tn" : tn,
+        "fn" : fn    }
 
 def model_init():
   return AutoModelForTokenClassification.from_pretrained(model_name,
