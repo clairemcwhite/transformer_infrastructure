@@ -2,6 +2,7 @@ from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, 
 import faiss
 fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 from sentence_transformers import util
+from iteration_utilities import  duplicates, unique_everseen
 
 from Bio import SeqIO
 import pickle
@@ -72,7 +73,6 @@ def get_matches_2(hidden_states, seqs,seq_names):
 
              match_edges.append(match_edge)
     
-
     return match_edges
  
 def get_seq_edges(seqs, seq_names):
@@ -124,14 +124,36 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     hidden_states = np.reshape(hidden_states, (hidden_states.shape[0]*hidden_states.shape[1], hidden_states.shape[2]))
    
     k = padded_seqlen
-    print("start kmeans")
-    D, I = kmeans_hidden_states_aas(hidden_states, k)
-    print("end kmeans")
-    I_list = list(flatten(I))
-    I_list_split =  [I_list[i:i + padded_seqlen] for i in range(0, len(I_list), padded_seqlen)]
+
+    #https://stackoverflow.com/questions/9835762/how-do-i-find-the-duplicates-in-a-list-and-create-another-list-with-them
+    completed = False
+    while completed == False:
+        print("start kmeans")
+        D, I = kmeans_hidden_states_aas(hidden_states, k)
+        print("end kmeans")
+        I_list = list(flatten(I))
+        I_list_split =  [I_list[i:i + padded_seqlen] for i in range(0, len(I_list), padded_seqlen)]
+        repeat_found = True
+        dups = []
+        e = 0
+        for i in range(len(I_list_split)):
+               prot_trunc = I_list_split[i][0:seqlens[i]]
+               dup_set = list(unique_everseen(duplicates(prot_trunc)))
+               dups = dups + dup_set
+               e = e + 1
+               print(dups)
+               if e == 5:
+                  break
+        completed = True
 
     D_list = list(flatten(D))
     D_list_split =  [D_list[i:i + padded_seqlen] for i in range(0, len(D_list), padded_seqlen)]
+
+    with open("/home/cmcwhite/testnet.csv", "w") as outfile:
+        for prot in I_list_split:
+           for i in range(len(prot) - 1):
+              outstring ="{},{}\n".format(prot[i], prot[i + 1])
+              outfile.write(outstring)
 
 
     #for i in range(len(I_list_split)):

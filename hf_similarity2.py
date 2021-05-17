@@ -1,4 +1,4 @@
-from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states
+from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, build_index
 from transformer_infrastructure.hf_embed import embed_sequences
 import pandas as pd
 import time
@@ -79,11 +79,18 @@ def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, loggin
     logging.info("post_hidden")
     logging.info("Start comparison")
     start = time.time()
-    distance, index = compare_hidden_states(enc_hidden_states, k) 
+
+
+    index = build_index(enc_hidden_states) 
+    #
+    k = len(seq_names)
+    print(k)
+    distance, index = index.search(enc_hidden_states, k)
     end = time.time()
+    tottime = end - start
     logging.info("compare complete in {} s".format(tottime))
 
-
+    print(distance)
     pairs = []
     complete = []
     with open(outfile, "w") as o:
@@ -95,10 +102,12 @@ def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, loggin
                 continue
               name1 = seq_names[i]
               name2 = seq_names[row[j]]
-              distance = round(distance[i,j], 5)
-              pairs.append([name1, name2, distance]
+              
+              D = distance[i,j]
+              pairs.append([name1, name2, D])
+              print(name1, name2,D)
               #print(i, row[j], seq_names[i], seq_names[row[j]], distance[i,j])
-              o.write("{}\t{}\t{}\n".format(seq_names[i], seq_names[row[j]], distance[i,j]))
+              o.write("{}\t{}\t{}\n".format(name1,name2,D))
  
 
     return 1
@@ -136,7 +145,7 @@ if __name__ == '__main__':
     #seqs = ['H E A L A I', 'H E A I A L', 'H E E L A H']
 
     #seq_names = ['seq1','seq2', 'seq3']
-    get_sequence_similarity(layers, model_path, seqs[0:100], seq_names[0:100], outfile, logging, k)
+    get_sequence_similarity(layers, model_path, seqs[0:5], seq_names[0:5], outfile, logging, k)
 
 
 #input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute")).unsqueeze(0)  # Batch size 1

@@ -10,7 +10,8 @@ import pandas as pd
 import requests
 from tqdm.auto import tqdm
 import numpy as np
-from seqeval.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import confusion_matrix 
 import re
 import argparse
 import logging
@@ -145,14 +146,14 @@ def compute_metrics(p: EvalPrediction):
     preds_list, out_label_list = align_predictions(p.predictions, p.label_ids)
     tn, fp, fn, tp = confusion_matrix([0, 1, 0, 1], [1, 1, 1, 0]).ravel()
     return {
-        "accuracy": accuracy_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1),
-        "precision": precision_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1)),
-        "recall": recall_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1)),
-        "f1": f1_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1)),
+        "accuracy": accuracy_score(out_label_list, preds_list),
+        "precision": precision_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1),
+        "recall": recall_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1),
+        "f1": f1_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1),
         "tp" : tp,
         "fp" : fp,
         "tn" : tn,
-        "fn" : fn    }
+        "fn" : fn   }
 
 def model_init():
   return AutoModelForTokenClassification.from_pretrained(model_name,

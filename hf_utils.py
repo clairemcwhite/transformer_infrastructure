@@ -59,9 +59,13 @@ def build_index(hidden_states):
 
     d = hidden_states.shape[1]
     index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
-    faiss.normalize_L2(allhidden_states)
+    faiss.normalize_L2(hidden_states)
     index.add(hidden_states)
     return(index)
+
+def get_knn(index, hidden_states, k):
+    distance, index = index.search(hidden_states, k)
+    return(distance, index)
 
 
 def compare_hidden_states(hidden_states_a, hidden_states_b, k):
@@ -71,8 +75,8 @@ def compare_hidden_states(hidden_states_a, hidden_states_b, k):
     Returns distances and indices
     About 10x faster than sentence_transformer util.pytorch_cos_sim
     '''
-    if hidden_states_a == hidden_states_b:
-       all_hidden_states = hidden_states_a 
+    #if hidden_states_a == hidden_states_b:
+    #   all_hidden_states = hidden_states_a 
        
 
     index = build_index(all_hidden_states)
