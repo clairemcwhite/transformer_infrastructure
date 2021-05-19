@@ -123,29 +123,32 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     # Go from (numseqs, seqlen, emb) to (numseqs * seqlen, emb)
     hidden_states = np.reshape(hidden_states, (hidden_states.shape[0]*hidden_states.shape[1], hidden_states.shape[2]))
    
-    k = padded_seqlen
+    k = 2 * padded_seqlen
 
     #https://stackoverflow.com/questions/9835762/how-do-i-find-the-duplicates-in-a-list-and-create-another-list-with-them
     completed = False
+    counter = 0 
     while completed == False:
-        print("start kmeans")
+        print("start kmeans, with k = ", k)
         D, I = kmeans_hidden_states_aas(hidden_states, k)
         print("end kmeans")
         I_list = list(flatten(I))
         I_list_split =  [I_list[i:i + padded_seqlen] for i in range(0, len(I_list), padded_seqlen)]
         repeat_found = True
         dups = []
-        e = 0
         for i in range(len(I_list_split)):
                prot_trunc = I_list_split[i][0:seqlens[i]]
                dup_set = list(unique_everseen(duplicates(prot_trunc)))
                dups = dups + dup_set
-               e = e + 1
-               print(dups)
-               if e == 5:
-                  break
-        completed = True
-
+        extra_k = len(list(set(dups)))
+        counter = counter + 1
+        print(list(set(dups)), extra_k)
+        print(counter)
+        if extra_k == 0:
+           completed = True
+        else:
+           k = k + extra_k
+        completed = True 
     D_list = list(flatten(D))
     D_list_split =  [D_list[i:i + padded_seqlen] for i in range(0, len(D_list), padded_seqlen)]
 
@@ -156,9 +159,9 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
               outfile.write(outstring)
 
 
-    #for i in range(len(I_list_split)):
-    #      I_trunc = I_list_split[i][0:seqlens[i]]
-    #      print(" ".join([str(item).zfill(2) for item in I_trunc]))
+    for i in range(len(I_list_split)):
+          I_trunc = I_list_split[i][0:seqlens[i]]
+          print(" ".join([str(item).zfill(2) for item in I_trunc]))
 
     #fl = np.rot90(np.array(hidden_states))
     print(np.array(hidden_states).shape)
@@ -262,7 +265,8 @@ if __name__ == '__main__':
 
     #seq_names = ['seq1','seq2', 'seq3', 'seq4']
 
-    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+   # fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
     sequence_lols = parse_fasta(fasta, "test.fasta", False)
 
     df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence', 'sequence_spaced'])
@@ -270,7 +274,7 @@ if __name__ == '__main__':
     seqs = df['sequence_spaced'].tolist() 
 
 
-    get_similarity_network(layers, model_name, seqs[0:800], seq_names[0:800])
+    get_similarity_network(layers, model_name, seqs[0:400], seq_names[0:400])
 
 
 #input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute")).unsqueeze(0)  # Batch size 1

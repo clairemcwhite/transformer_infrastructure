@@ -103,7 +103,7 @@ def get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, loggin
               name1 = seq_names[i]
               name2 = seq_names[row[j]]
               
-              D = distance[i,j]
+              D =  1 - round(distance[i,j], 2)
               pairs.append([name1, name2, D])
               print(name1, name2,D)
               #print(i, row[j], seq_names[i], seq_names[row[j]], distance[i,j])
@@ -145,7 +145,7 @@ if __name__ == '__main__':
     #seqs = ['H E A L A I', 'H E A I A L', 'H E E L A H']
 
     #seq_names = ['seq1','seq2', 'seq3']
-    get_sequence_similarity(layers, model_path, seqs[0:5], seq_names[0:5], outfile, logging, k)
+    get_sequence_similarity(layers, model_path, seqs, seq_names, outfile, logging, k)
 
 
 #input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute")).unsqueeze(0)  # Batch size 1

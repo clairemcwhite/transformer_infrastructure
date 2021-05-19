@@ -144,12 +144,33 @@ def align_predictions(predictions: np.ndarray, label_ids: np.ndarray):
 
 def compute_metrics(p: EvalPrediction):
     preds_list, out_label_list = align_predictions(p.predictions, p.label_ids)
-    tn, fp, fn, tp = confusion_matrix([0, 1, 0, 1], [1, 1, 1, 0]).ravel()
+
+    print(preds_list[0:15])
+    print(out_label_list[0:15])
+
+    preds_trimmed =list(numpy.concatenate(preds_list))
+    out_label_trimmed = list(numpy.concatenate(out_label_list))
+    print(preds_trimmed[0:15])
+    print(out_label_trimmed[0:15])
+
+
+    # Removed masked positions
+    #for i in range(len(out_label_list)):
+    #    if out_label_list[i] == -100:
+    #       continue
+    #    else:
+    #       preds_trimmed.append(preds_list[i])
+    #       out_label_trimmed.append(out_label_list[i])
+    #print(preds_trimmed[0:15])
+    #print(out_label_trimmed[0:15])
+
+
+    tn, fp, fn, tp = confusion_matrix(out_label_trimmed, preds_trimmed, labels = ["B","G"] ).ravel()
     return {
-        "accuracy": accuracy_score(out_label_list, preds_list),
-        "precision": precision_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1),
-        "recall": recall_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1),
-        "f1": f1_score(out_label_list, preds_list, labels = [0 ,1], pos_label = 1),
+        "accuracy": accuracy_score(out_label_trimmed, preds_trimmed),
+        "precision": precision_score(out_label_trimmed, preds_trimmed, labels = ["B" , "G"], pos_label = "G"),
+        "recall": recall_score(out_label_trimmed, preds_trimmed, labels = ["B" ,"G"], pos_label = "G"),
+        "f1": f1_score(out_label_trimmed, preds_trimmed, labels = ["B" ,"G"], pos_label = "G"),
         "tp" : tp,
         "fp" : fp,
         "tn" : tn,

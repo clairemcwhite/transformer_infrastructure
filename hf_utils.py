@@ -97,10 +97,7 @@ def kmeans_hidden_states_aas(hidden_states_list, k):
     D = distance to centroid
     I = index of cluster
     '''
-    print(hidden_states_list.shape)
     hidden_states = np.concatenate([hidden_states_list])
-    print(hidden_states)
-    print(hidden_states.shape)
     d = hidden_states.shape[1]
     kmeans = faiss.Kmeans(d = d, k = k, niter = 10)
     kmeans.train(hidden_states)

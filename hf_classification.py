@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-
+from transformer_infrastructure.hf_evaluation import get_predictions
 import torch
 from transformers import AutoTokenizer, Trainer, TrainingArguments, AutoModelForSequenceClassification, BertTokenizerFast, EvalPrediction
 from torch.utils.data import Dataset
