@@ -148,8 +148,8 @@ def compute_metrics(p: EvalPrediction):
     print(preds_list[0:15])
     print(out_label_list[0:15])
 
-    preds_trimmed =list(numpy.concatenate(preds_list))
-    out_label_trimmed = list(numpy.concatenate(out_label_list))
+    preds_trimmed =list(np.concatenate(preds_list))
+    out_label_trimmed = list(np.concatenate(out_label_list))
     print(preds_trimmed[0:15])
     print(out_label_trimmed[0:15])
 

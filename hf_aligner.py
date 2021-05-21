@@ -1,4 +1,4 @@
-from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, compare_hidden_states, kmeans_hidden_states_aas
+from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, build_index
 import faiss
 fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 from sentence_transformers import util
@@ -17,6 +17,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns; sns.set() 
  
+
+def reshape_flat(hstates_list):
+
+    # Go from (numseqs, seqlen, emb) to (numseqs * seqlen, emb)
+    hidden_states = np.reshape(hstates_list, (hstates_list.shape[0]*hstates_list.shape[1], hstates_list.shape[2]))
+    return(hidden_states)
+
 
 def get_matches_2(hidden_states, seqs,seq_names):
     """Get a word vector by first tokenizing the input sentence, getting all token idxs
@@ -105,13 +112,19 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     #seqlen = max([len(x.replace(" ", "")) for x in seqs])
     #print(seqlen)
 
-    seqlens = [len(x.replace(" ", "")) for x in seqs]
+    #seqlens = [len(x.replace(" ", "")) for x in seqs]
     print("start hidden_states")
-    hidden_states = get_hidden_states(seqs, model, tokenizer, layers)
+    print(seqs)
+    hstates_list = get_hidden_states(seqs, model, tokenizer, layers)
     print("end hidden states")
-    padded_seqlen = hidden_states.shape[1]
+    #print(hstates_list)
+    #print(hstates_list.shape)
+    padded_seqlen = hstates_list.shape[1]
 
-    num_seqs = len(seqs)
+    # After encoding, remove spaces from sequences
+    seqs = [x.replace(" ", "") for x in seqs]
+    seqlens = [len(x) for x in seqs]
+    numseqs = len(seqs)
     #for seq in seqs:
     #   hidden_states = get_hidden_states([seq], model, tokenizer, layers)
     #   hidden_states_list.append(hidden_states)
@@ -121,71 +134,96 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     #d = hidden_states[0].shape[1]
 
     # Go from (numseqs, seqlen, emb) to (numseqs * seqlen, emb)
-    hidden_states = np.reshape(hidden_states, (hidden_states.shape[0]*hidden_states.shape[1], hidden_states.shape[2]))
-   
-    k = 2 * padded_seqlen
+    hidden_states = np.array(reshape_flat(hstates_list))  
+
+    index = build_index(hidden_states)
+     
+    index_to_protpos = {}
+    for i in range(0, numseqs):
+       # All sequences are padded to the length of the longest sequence
+       for pos in range(0, padded_seqlen):
+            # Only retrieve info from positions that aren't padding
+            if pos > seqlens[i] -1 :
+               continue
+            print(pos) 
+            index_num = padded_seqlen * i + pos
+            aa = seqs[i][pos]
+            identified = [i, aa, pos]
+            index_to_protpos[index_num] = identified
+    print(index_to_protpos)
+
+    D, I =  index.search(hidden_states, k = numseqs*padded_seqlen) 
+    np.set_printoptions(threshold=np.inf)
+    print(I)
+    print(len(I))
+    #print(D)
+    print(numseqs)
+    print(padded_seqlen)          
+
+ 
+    #index = build_index(hidden_states)
+ 
+    # Just do full loop for troubleshooting, the work on indexes
+    #for i in range(len(seqs)):
+    #   for i_pos in range(len(hstates_list[i])):
+    #       for j in range(1, len(seqs) - 1):
+    #           print(hstates_list[i][i_pos].shape)
+    #           print(hstates_list[j].shape) 
+    #           pos_vs_prot = torch.cat([hstates_list[i][i_pos]] + hstates_list[j])
+    #           print(pos_vs_prot.shape)
+    #           index = build_index(pos_vs_prot)
+    #           D, I =  index.search(hstates_list[i][i_pos], k = 2)
+    #           print(D, I)
+    #           print(seqs[i][i_pos]) 
+
+    #           break
+    #k = 2 * padded_seqlen
 
     #https://stackoverflow.com/questions/9835762/how-do-i-find-the-duplicates-in-a-list-and-create-another-list-with-them
-    completed = False
-    counter = 0 
-    while completed == False:
-        print("start kmeans, with k = ", k)
-        D, I = kmeans_hidden_states_aas(hidden_states, k)
-        print("end kmeans")
-        I_list = list(flatten(I))
-        I_list_split =  [I_list[i:i + padded_seqlen] for i in range(0, len(I_list), padded_seqlen)]
-        repeat_found = True
-        dups = []
-        for i in range(len(I_list_split)):
-               prot_trunc = I_list_split[i][0:seqlens[i]]
-               dup_set = list(unique_everseen(duplicates(prot_trunc)))
-               dups = dups + dup_set
-        extra_k = len(list(set(dups)))
-        counter = counter + 1
-        print(list(set(dups)), extra_k)
-        print(counter)
-        if extra_k == 0:
-           completed = True
-        else:
-           k = k + extra_k
-        completed = True 
-    D_list = list(flatten(D))
-    D_list_split =  [D_list[i:i + padded_seqlen] for i in range(0, len(D_list), padded_seqlen)]
+        #I_list = list(flatten(I))
+        #I_list_split =  [I_list[i:i + padded_seqlen] for i in range(0, len(I_list), padded_seqlen)]
+        #repeat_found = True
+        #dups = []
+        #for i in range(len(I_list_split)):
+        #       prot_trunc = I_list_split[i][0:seqlens[i]]
+        #       dup_set = list(unique_everseen(duplicates(prot_trunc)))
+    #D_list = list(flatten(D))
+    #D_list_split =  [D_list[i:i + padded_seqlen] for i in range(0, len(D_list), padded_seqlen)]
 
-    with open("/home/cmcwhite/testnet.csv", "w") as outfile:
-        for prot in I_list_split:
-           for i in range(len(prot) - 1):
-              outstring ="{},{}\n".format(prot[i], prot[i + 1])
-              outfile.write(outstring)
+    #with open("/home/cmcwhite/testnet.csv", "w") as outfile:
+    #    for prot in I_list_split:
+    #       for i in range(len(prot) - 1):
+    #          outstring ="{},{}\n".format(prot[i], prot[i + 1])
+    #          outfile.write(outstring)
 
 
-    for i in range(len(I_list_split)):
-          I_trunc = I_list_split[i][0:seqlens[i]]
-          print(" ".join([str(item).zfill(2) for item in I_trunc]))
+    #for i in range(len(I_list_split)):
+    #      I_trunc = I_list_split[i][0:seqlens[i]]
+    #      print(" ".join([str(item).zfill(2) for item in I_trunc]))
 
     #fl = np.rot90(np.array(hidden_states))
-    print(np.array(hidden_states).shape)
+    #print(np.array(hidden_states).shape)
     #print(fl.shape)
 
-    pca = faiss.PCAMatrix(4096, 100)
-    pca.train(np.array(hidden_states))
-    tr = pca.apply_py(np.array(hidden_states))
-    print(tr)
-    print(tr.shape)
+   # pca = faiss.PCAMatrix(4096, 100)
+    #pca.train(np.array(hidden_states))
+    #tr = pca.apply_py(np.array(hidden_states))
+    #print(tr)
+    #print(tr.shape)
+#
 
 
 
+    #plt.scatter(tr[:,0], tr[:, 1],
+    #        c=I_list, edgecolor='none', alpha=0.5,
+    #        cmap=plt.cm.get_cmap('jet', k))
+    #plt.xlabel('component 1')
+    #plt.ylabel('component 2')
+    #plt.colorbar()
 
-    plt.scatter(tr[:,0], tr[:, 1],
-            c=I_list, edgecolor='none', alpha=0.5,
-            cmap=plt.cm.get_cmap('jet', k))
-    plt.xlabel('component 1')
-    plt.ylabel('component 2')
-    plt.colorbar()
-
-    plt.plot(tr[:, 0][0:25], tr[:, 1][0:25])
+    #plt.plot(tr[:, 0][0:25], tr[:, 1][0:25])
    
-    plt.savefig("/home/cmcwhite/pca12.png")
+    #plt.savefig("/home/cmcwhite/pca12.png")
 
 
     # Plan...hierarchical k means
@@ -265,8 +303,8 @@ if __name__ == '__main__':
 
     #seq_names = ['seq1','seq2', 'seq3', 'seq4']
 
-   # fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
-    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
+    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
     sequence_lols = parse_fasta(fasta, "test.fasta", False)
 
     df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence', 'sequence_spaced'])
@@ -274,7 +312,7 @@ if __name__ == '__main__':
     seqs = df['sequence_spaced'].tolist() 
 
 
-    get_similarity_network(layers, model_name, seqs[0:400], seq_names[0:400])
+    get_similarity_network(layers, model_name, seqs[0:5], seq_names[0:5])
 
 
 #input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute")).unsqueeze(0)  # Batch size 1

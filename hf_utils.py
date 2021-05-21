@@ -132,6 +132,7 @@ def kmeans_hidden_states(hidden_states, k):
 
 ### AA relationships ###
 def get_hidden_states(seqs, model, tokenizer, layers):
+    
     # For a list of sequences, get list of hidden states
     encoded = tokenizer.batch_encode_plus(seqs, return_tensors="pt", padding=True)
     with torch.no_grad():
@@ -139,11 +140,13 @@ def get_hidden_states(seqs, model, tokenizer, layers):
 
     # Get all hidden states
     hidden_states = output.hidden_states
+    
     #BramVanroy  https://github.com/huggingface/transformers/issues/1328#issuecomment-534956703
     #Concatenate final for hidden states into long vector
     pooled_output = torch.cat(tuple([hidden_states[i] for i in [-4, -3, -2, -1]]), dim=-1)
 
-
+    # If output shape is [len(seqs), 3, x], make sure there are spaces between each amino acid
+    # 3 - CLS,seq,END
     return pooled_output
 
 
