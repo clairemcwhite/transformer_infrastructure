@@ -25,75 +25,7 @@ def reshape_flat(hstates_list):
     return(hidden_states)
 
 
-def get_matches_2(hidden_states, seqs,seq_names):
-    """Get a word vector by first tokenizing the input sentence, getting all token idxs
-       that make up the word of interest, and then `get_hidden_states
-     BramVanroy`."""
 
-    
-
-    match_edges = []
-
-    
-    seqs = [x.replace(" ", "") for x in seqs]
-    seq_lens = [len(x) for x in seqs]
-   
-    
-    """ Do for all and cluster"""
-    """ Get clusters. Guideposts?"""
-    """ Fill in? """
-    # compare all sequences 'a' to 'b'
-    complete = []
-    for a in range(len(hidden_states)): 
-      complete.append(a)
-      # Remove embeddings for [PAD] past the length of the original sentence
-      hidden_states_a = hidden_states[a][1:seq_lens[a] + 1]
-
-      for b in range(len(hidden_states)):
-          if b in complete:
-              continue
-          hidden_states_b = hidden_states[b][1:seq_lens[b] + 1]
-          # Compare first token for sequence similarity, not the place for this
-          #overall_sim =  util.pytorch_cos_sim(hidden_states[a][0], hidden_states[b][0])
-         
-          # Don't compare first token [CLS] and last token [SEP]
-          print(len(hidden_states_a))
-          print(len(hidden_states_b))
-          cosine_scores_a_b =  util.pytorch_cos_sim(hidden_states_a, hidden_states_b)
-          print(cosine_scores_a_b)
-
-          # 1 because already compared first token [CLS] to [CLS] for overall similarity
-          # - 1 becuase we don't need to compare the final token [SEP]
-          for i in range(0, len(cosine_scores_a_b) ):
-             bestscore = max(cosine_scores_a_b[i])
-             bestmatch = np.argmax(cosine_scores_a_b[i])
-             #top3idx = np.argpartition(cosine_scores_a_b[i], -3)[-3:]
-             #top3scores= cosine_scores_a_b[i][top3idx]
-             print(i)
-             print(seqs)          
-             print(seqs[a])
-             print(seq_names[a])
-             node_a = '{}-{}-{}'.format(seq_names[a], i, seqs[a][i])
-             node_b = '{}-{}-{}'.format(seq_names[b], bestmatch, seqs[b][bestmatch])
-             match_edge = '{},{},{},match'.format(node_a,node_b,bestscore)
-             print(match_edge)
-
-             match_edges.append(match_edge)
-    
-    return match_edges
- 
-def get_seq_edges(seqs, seq_names):
-    seq_edges = []
-    seqs = [x.replace(" ", "") for x in seqs]
-
-    for i in range(len(seqs)):
-        for j in range(len(seqs[i]) - 1):
-           pos1 = '{}-{}-{}'.format(seq_names[i], seqs[i][j], j)
-           pos2 = '{}-{}-{}'.format(seq_names[i], seqs[i][j + 1], j + 1)
-           seq_edges.append('{},{},1,seq'.format(pos1,pos2))
-    return(seq_edges)
-
- 
 def get_similarity_network(layers, model_name, seqs, seq_names):
     # Use last four layers by default
     #layers = [-4, -3, -2, -1] if layers is None else layers
@@ -138,28 +70,101 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
 
     index = build_index(hidden_states)
      
-    index_to_protpos = {}
-    for i in range(0, numseqs):
-       # All sequences are padded to the length of the longest sequence
-       for pos in range(0, padded_seqlen):
-            # Only retrieve info from positions that aren't padding
-            if pos > seqlens[i] -1 :
-               continue
-            print(pos) 
-            index_num = padded_seqlen * i + pos
-            aa = seqs[i][pos]
-            identified = [i, aa, pos]
-            index_to_protpos[index_num] = identified
-    print(index_to_protpos)
-
     D, I =  index.search(hidden_states, k = numseqs*padded_seqlen) 
-    np.set_printoptions(threshold=np.inf)
+    #np.set_printoptions(threshold=np.inf)
     print(I)
     print(len(I))
-    #print(D)
+    print(D)
     print(numseqs)
-    print(padded_seqlen)          
+    print(padded_seqlen) 
+    # Spliti into sequences
 
+
+    # numsites * [ scores to everything ] 
+    # [[[seq1-aa1 to seq1], [seq1-aa1 to seq2]], [[seq1-aa2 to seq1], [seq1-aa2 to seq2]], [[seq2-aa1 to seq1], [seq2-aa1 to seq2]], [[seq2-aa2 to seq1], [seq2-aa2 to seq2]]]
+    #numseqs * padded_seqlen * numseqs * padded seqlen
+
+
+    #I_list_split =  [I[i:i + padded_seqlen] for i in range(0, len(I), padded_seqlen)]
+    #print(len(I))
+    #print(len(I_list_split))
+    #print(a) 
+    
+    D_tmp = []
+    for i in range(len(I)):
+        # Sort distances by index (default returns in descending order)
+        sorted_D = [x for _,x in sorted(zip(I[i],D[i]))]
+        sorted_D_split = [sorted_D[i:i + padded_seqlen] for i in range(0, len(sorted_D), padded_seqlen)]
+        D_tmp.append(sorted_D_split)
+
+    D =  [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
+    #print(len(D_list_split))
+    print(np.array(D).shape)
+
+    #Do like, after a string of matches future matches can't be before
+    
+    for query_seq in range(len(D)):
+        streak  = np.repeat(0, numseqs)
+        seq_start  = np.repeat(-1, numseqs) 
+        prev_match = np.repeat(0, numseqs) 
+     
+        for query_aa in range(len(D[query_seq])):
+           if query_aa >= seqlens[query_seq]:
+               continue
+           for target_seq in range(len(D[query_seq][query_aa])):
+           #for target_seq in [4]:
+
+               # Only take best score of real sequence
+               # Can't mess with index start position, otherwise argmax...
+               bestscore = max(D[query_seq][query_aa][target_seq][0:seqlens[target_seq]])
+               bestmatch = np.argmax(D[query_seq][query_aa][target_seq][0:seqlens[target_seq]])
+               recip_bestscore = max(D[target_seq][bestmatch][query_seq][0:seqlens[query_seq]])
+
+               recip_bestmatch = np.argmax(D[target_seq][bestmatch][query_seq][0:seqlens[query_seq]])
+               
+               if recip_bestmatch == query_aa:
+                  print("{}-{},{}-{},{},{},{}".format(query_seq, query_aa, target_seq, bestmatch, bestscore, seqs[query_seq][query_aa], seqs[target_seq][bestmatch]))
+                  if bestmatch <= seq_start[target_seq]:
+                      print("prevented  lookbehind")
+                      continue
+                   #print(prev_match[target_seq], bestmatch)
+                  if bestmatch - prev_match[target_seq] == 1:
+                     streak[target_seq] = streak[target_seq] + 1
+                     if streak[target_seq] == 3:
+                        #print("c-c-c-combo")
+                        streak[target_seq] = 0
+                        seq_start[target_seq] = bestmatch
+                        #print(seq_start[target_seq])
+                  else:
+                     streak[target_seq] = 0 
+ 
+                  prev_match[target_seq] = bestmatch
+    print(seq[0][1])
+        #for seq in sorted_D_split:
+        #        bestscore = max(seq)
+        #        bestmatch = np.argmax(seq)
+        #        print("".format(i, bestmatch, bestscore))
+ 
+
+
+    #for i in range(0, len(cosine_scores_a_b) ):
+    #     bestscore = max(cosine_scores_a_b[i])
+    #     bestmatch = np.argmax(cosine_scores_a_b[i])
+    
+ 
+    extracted_seqs = [D[index_list] for index_list in indices]
+
+    # Split indexes 
+    #I_list = list(flatten(I))
+    #I_list_split =  [I_list[i:i + padded_seqlen] for i in range(0, len(I_list), padded_seqlen)]
+
+    #D_list = list(flatten(D))
+    #D_list_split =  [D_list[i:i + padded_seqlen] for i in range(0, len(D_list), padded_seqlen)]
+
+    #for i in range(len(I_list_split)):
+    #    prot_trunc = I_list_split[i][0:seqlens[i]]
+
+ 
  
     #index = build_index(hidden_states)
  
@@ -317,4 +322,88 @@ if __name__ == '__main__':
 
 #input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute")).unsqueeze(0)  # Batch size 1
 #outputs = model(input_ids)
+    #index_to_protpos = {}
+    # convert index to sequence position/aa
+    
+    #for i in range(0, numseqs):
+    #   # All sequences are padded to the length of the longest sequence
+    #   for pos in range(0, padded_seqlen):
+    #        # Only retrieve info from positions that aren't padding
+    #        if pos > seqlens[i] -1 :
+    #           continue
+    #        print(pos) 
+    #        index_num = padded_seqlen * i + pos
+    #        aa = seqs[i][pos]
+    #        identified = [i, aa, pos]
+    #        index_to_protpos[index_num] = identified
+    #print(index_to_protpos)
+
+#def get_matches_2(hidden_states, seqs,seq_names):
+#    """Get a word vector by first tokenizing the input sentence, getting all token idxs
+#       that make up the word of interest, and then `get_hidden_states
+#     BramVanroy`."""
 #
+#    
+#
+#    match_edges = []
+#
+#    
+#    seqs = [x.replace(" ", "") for x in seqs]
+#    seq_lens = [len(x) for x in seqs]
+#   
+#    
+#    """ Do for all and cluster"""
+#    """ Get clusters. Guideposts?"""
+#    """ Fill in? """
+#    # compare all sequences 'a' to 'b'
+#    complete = []
+#    for a in range(len(hidden_states)): 
+#      complete.append(a)
+#      # Remove embeddings for [PAD] past the length of the original sentence
+#      hidden_states_a = hidden_states[a][1:seq_lens[a] + 1]
+#
+#      for b in range(len(hidden_states)):
+#          if b in complete:
+#              continue
+#          hidden_states_b = hidden_states[b][1:seq_lens[b] + 1]
+#          # Compare first token for sequence similarity, not the place for this
+#          #overall_sim =  util.pytorch_cos_sim(hidden_states[a][0], hidden_states[b][0])
+#         
+#          # Don't compare first token [CLS] and last token [SEP]
+#          print(len(hidden_states_a))
+#          print(len(hidden_states_b))
+#          cosine_scores_a_b =  util.pytorch_cos_sim(hidden_states_a, hidden_states_b)
+#          print(cosine_scores_a_b)
+#
+#          # 1 because already compared first token [CLS] to [CLS] for overall similarity
+#          # - 1 becuase we don't need to compare the final token [SEP]
+#          for i in range(0, len(cosine_scores_a_b) ):
+#             bestscore = max(cosine_scores_a_b[i])
+#             bestmatch = np.argmax(cosine_scores_a_b[i])
+#             #top3idx = np.argpartition(cosine_scores_a_b[i], -3)[-3:]
+#             #top3scores= cosine_scores_a_b[i][top3idx]
+#             print(i)
+#             print(seqs)          
+#             print(seqs[a])
+#             print(seq_names[a])
+#             node_a = '{}-{}-{}'.format(seq_names[a], i, seqs[a][i])
+#             node_b = '{}-{}-{}'.format(seq_names[b], bestmatch, seqs[b][bestmatch])
+#             match_edge = '{},{},{},match'.format(node_a,node_b,bestscore)
+#             print(match_edge)
+#
+#             match_edges.append(match_edge)
+#    
+#    return match_edges
+# 
+#def get_seq_edges(seqs, seq_names):
+#    seq_edges = []
+#    seqs = [x.replace(" ", "") for x in seqs]
+#
+#    for i in range(len(seqs)):
+#        for j in range(len(seqs[i]) - 1):
+#           pos1 = '{}-{}-{}'.format(seq_names[i], seqs[i][j], j)
+#           pos2 = '{}-{}-{}'.format(seq_names[i], seqs[i][j + 1], j + 1)
+#           seq_edges.append('{},{},1,seq'.format(pos1,pos2))
+#    return(seq_edges)
+#
+# 
