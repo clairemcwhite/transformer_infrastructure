@@ -100,13 +100,13 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     D =  [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
     #print(len(D_list_split))
     print(np.array(D).shape)
-
+    hitlist = []
     #Do like, after a string of matches future matches can't be before
-    
+    # Get reciprocal best hits 
     for query_seq in range(len(D)):
-        streak  = np.repeat(0, numseqs)
-        seq_start  = np.repeat(-1, numseqs) 
-        prev_match = np.repeat(0, numseqs) 
+        #streak  = np.repeat(0, numseqs)
+        #seq_start  = np.repeat(-1, numseqs) 
+        #prev_match = np.repeat(0, numseqs) 
      
         for query_aa in range(len(D[query_seq])):
            if query_aa >= seqlens[query_seq]:
@@ -124,22 +124,99 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
                
                if recip_bestmatch == query_aa:
                   print("{}-{},{}-{},{},{},{}".format(query_seq, query_aa, target_seq, bestmatch, bestscore, seqs[query_seq][query_aa], seqs[target_seq][bestmatch]))
-                  if bestmatch <= seq_start[target_seq]:
-                      print("prevented  lookbehind")
-                      continue
+                  #if bestmatch <= seq_start[target_seq]:
+                  #    print("prevented  lookbehind")
+                  #    continue
+                  hitlist.append([query_seq, query_aa, target_seq, bestmatch, bestscore, seqs[query_seq][query_aa], seqs[target_seq][bestmatch]])
+
                    #print(prev_match[target_seq], bestmatch)
-                  if bestmatch - prev_match[target_seq] == 1:
-                     streak[target_seq] = streak[target_seq] + 1
-                     if streak[target_seq] == 3:
+                  #if bestmatch - prev_match[target_seq] == 1:
+                  #   streak[target_seq] = streak[target_seq] + 1
+                  #   if streak[target_seq] == 3:
                         #print("c-c-c-combo")
-                        streak[target_seq] = 0
-                        seq_start[target_seq] = bestmatch
+                  #      streak[target_seq] = 0
+                  #      seq_start[target_seq] = bestmatch
                         #print(seq_start[target_seq])
-                  else:
-                     streak[target_seq] = 0 
+                  #else:
+                  #   streak[target_seq] = 0 
  
-                  prev_match[target_seq] = bestmatch
-    print(seq[0][1])
+                  #prev_match[target_seq] = bestmatch
+    #reverse_streak = []   
+
+    #To do: Make matchstate object
+    # Remove streak conflict matches
+    filtered_hitlist = []
+    for i in range(len(seqs)):
+       query_prot = [x for x in hitlist if x[0] == i]
+       for j in range(len(seqs)):
+          target_prot = [x for x in query_prot if x[2] == j]
+
+          print("remove lookbehinds")
+          prevmatch = 0
+          seq_start = -1
+          streak = 0
+
+          no_lookbehinds = []
+          for match_state in target_prot:
+               print(match_state)
+               if match_state[3] <= seq_start:
+                     print("lookbehind prevented")
+                     streak = 0 
+                     continue
+               no_lookbehinds.append(match_state)
+
+               if match_state[3] - prevmatch == 1:
+                  streak = streak + 1
+                  if streak > 2:  
+                     seq_start = match_state[3]
+               else:
+                  streak = 0
+               prevmatch = match_state[3]
+
+          print("remove lookaheads")
+          prevmatch = seqlens[j]
+          seq_end = seqlens[j]
+          streak = 0
+
+          filtered_target_prot = []
+          for match_state in no_lookbehinds[::-1]:
+               print(match_state, streak, prevmatch)
+               if match_state[3] >= seq_end:
+                    print("lookahead prevented")
+                    streak = 0
+                    continue
+               filtered_target_prot.append(match_state)
+               if prevmatch - match_state[3] == 1:
+                  streak = streak + 1
+                  if streak > 2:  
+                     seq_end = match_state[3]
+               else:
+                  streak = 0
+               prevmatch = match_state[3]
+ 
+          filtered_hitlist = filtered_hitlist + filtered_target_prot
+
+    #print(list(flatten(filtered_hitlist)))
+
+    print(pd.DataFrame(filtered_hitlist))
+    with open("testnet.csv", "w") as outfile:
+      outfile.write("aa1,aa2,score\n")
+      # If do reverse first, don't have to do second resort
+      for x in filtered_hitlist[::1]:
+ 
+         outstring = "{}-{}-{},{}-{}-{},{}\n".format(x[0], x[5], x[1], x[2], x[6], x[3], x[4])
+         outfile.write(outstring)
+     # >>> edges = [(1, 5), (4, 2), (4, 3), (5, 4), (6, 3), (7, 6), (8, 9)]
+     #>>> graph = nx.Graph(edges) 
+     #[s for s in nx.enumerate_all_cliques(G) if len(s) > 1]
+     #>>> [tuple(c) for c in nx.connected_components(graph)]
+     #[(1, 2, 3, 4, 5, 6, 7), (8, 9)]
+
+     #Check that subgraphs are sequential. Otherwise what? Remove non-sequential components?
+     # If an aa is in a fully connected clique, it gets masked
+     # Then can only look for matches between strings of matches
+ 
+
         #for seq in sorted_D_split:
         #        bestscore = max(seq)
         #        bestmatch = np.argmax(seq)
