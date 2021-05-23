@@ -2,7 +2,7 @@ from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, 
 import faiss
 fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 from sentence_transformers import util
-#from iteration_utilities import  duplicates, unique_everseen
+from iteration_utilities import  duplicates
 
 from Bio import SeqIO
 import pickle
@@ -13,11 +13,10 @@ import torch
 from transformers import AutoTokenizer, AutoModel
 
 import networkx as nx
+import igraph
 from pandas.core.common import flatten 
 import pandas as pd 
-#import matplotlib.pyplot as plt
-#import seaborn as sns; sns.set() 
- 
+
 
 def reshape_flat(hstates_list):
 
@@ -78,19 +77,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     print(D)
     print(numseqs)
     print(padded_seqlen) 
-    # Spliti into sequences
-
-
-    # numsites * [ scores to everything ] 
-    # [[[seq1-aa1 to seq1], [seq1-aa1 to seq2]], [[seq1-aa2 to seq1], [seq1-aa2 to seq2]], [[seq2-aa1 to seq1], [seq2-aa1 to seq2]], [[seq2-aa2 to seq1], [seq2-aa2 to seq2]]]
-    #numseqs * padded_seqlen * numseqs * padded seqlen
-
-
-    #I_list_split =  [I[i:i + padded_seqlen] for i in range(0, len(I), padded_seqlen)]
-    #print(len(I))
-    #print(len(I_list_split))
-    #print(a) 
-    
+   
     D_tmp = []
     for i in range(len(I)):
         # Sort distances by index (default returns in descending order)
@@ -99,21 +86,15 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
         D_tmp.append(sorted_D_split)
 
     D =  [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
-    #print(len(D_list_split))
-    print(np.array(D).shape)
     hitlist = []
-    #Do like, after a string of matches future matches can't be before
+
     # Get reciprocal best hits 
     for query_seq in range(len(D)):
-        #streak  = np.repeat(0, numseqs)
-        #seq_start  = np.repeat(-1, numseqs) 
-        #prev_match = np.repeat(0, numseqs) 
      
         for query_aa in range(len(D[query_seq])):
            if query_aa >= seqlens[query_seq]:
                continue
            for target_seq in range(len(D[query_seq][query_aa])):
-           #for target_seq in [4]:
 
                # Only take best score of real sequence
                # Can't mess with index start position, otherwise argmax...
@@ -125,24 +106,8 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
                
                if recip_bestmatch == query_aa:
                   print("{}-{},{}-{},{},{},{}".format(query_seq, query_aa, target_seq, bestmatch, bestscore, seqs[query_seq][query_aa], seqs[target_seq][bestmatch]))
-                  #if bestmatch <= seq_start[target_seq]:
-                  #    print("prevented  lookbehind")
-                  #    continue
                   hitlist.append([query_seq, query_aa, target_seq, bestmatch, bestscore, seqs[query_seq][query_aa], seqs[target_seq][bestmatch]])
 
-                   #print(prev_match[target_seq], bestmatch)
-                  #if bestmatch - prev_match[target_seq] == 1:
-                  #   streak[target_seq] = streak[target_seq] + 1
-                  #   if streak[target_seq] == 3:
-                        #print("c-c-c-combo")
-                  #      streak[target_seq] = 0
-                  #      seq_start[target_seq] = bestmatch
-                        #print(seq_start[target_seq])
-                  #else:
-                  #   streak[target_seq] = 0 
- 
-                  #prev_match[target_seq] = bestmatch
-    #reverse_streak = []   
 
     #To do: Make matchstate object
     # Remove streak conflict matches
@@ -197,8 +162,6 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
  
           filtered_hitlist = filtered_hitlist + filtered_target_prot
 
-    #print(list(flatten(filtered_hitlist)))
-
     print(pd.DataFrame(filtered_hitlist))
     with open("testnet.csv", "w") as outfile:
       outfile.write("aa1,aa2,score\n")
@@ -215,23 +178,50 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
         node2_id = "{}-{}-{}".format(x[2], x[6], x[3])
         edges.append((node1_id, node2_id))
      # >>> edges = [(1, 5), (4, 2), (4, 3), (5, 4), (6, 3), (7, 6), (8, 9)]
-    G = nx.Graph(edges)
-    print("Find all fully connected cliques of size > 2") 
-    # Watch for exponential...
-    all_cliques = list(nx.enumerate_all_cliques(G))
-    fc_cliques = []
-    fc_cliques_nodes = []
-    # Start from largest potential cluster, count down to size 3
-    for i in range(numseqs, 2, -1):
-        fc = [s for s in all_cliques if len(s) == i]
-        print(i)
-        for c in fc:
-           if not any(item in c for item in fc_cliques_nodes):
-               print(c)
-               print(fc_cliques_nodes)
+    G = igraph.Graph(edges=edges, directed=False)
+    # Remove multiedges and loops
+    G = G.simplify()
+    
 
-               fc_cliques.append(c) 
-        fc_cliques_nodes = list(flatten(fc_cliques))
+
+
+#    print("Find all fully connected cliques of size > 2") 
+#    # Watch for exponential...
+#    # This is not sustainable
+#    # Great for like 3 sequences
+#    all_cliques = list(nx.enumerate_all_cliques(G))
+#    print("cliques found")
+#    fc_cliques = []
+#    fc_cliques_nodes = []
+#    # Start from largest potential cluster, count down to size 3
+#    for i in range(numseqs, 2, -1):
+#        fc = [s for s in all_cliques if len(s) == i]
+#        for clique in fc:
+#           if not any(item in clique for item in fc_cliques_nodes):
+#               fc_cliques.append(clique) 
+#        fc_cliques_nodes = list(flatten(fc_cliques))
+#
+#    fc_cliques_nooverlaps = []
+#    node_duplicates = list(duplicates(fc_cliques_nodes))
+#    print(node_duplicates)
+#    for clique in fc_cliques:
+#       if not any(item in clique for item in node_duplicates):
+#             fc_cliques_nooverlaps.append(clique)
+#
+#    for x in fc_cliques:
+#      print(x)
+#
+#    clique_dict = {}
+#    for i in range(len(fc_cliques_nooverlaps)):
+#         for pos in fc_cliques_nooverlaps[i]:
+#             clique_dict[pos] = i
+#
+#    print(clique_dict)
+    
+
+    
+
+
         #a = [a for a in fc if no any(item in List1 for item in List2)
 
     #for x in fc_cliques:
@@ -425,7 +415,7 @@ if __name__ == '__main__':
     seqs = df['sequence_spaced'].tolist() 
 
 
-    get_similarity_network(layers, model_name, seqs[0:5], seq_names[0:5])
+    get_similarity_network(layers, model_name, seqs[0:20], seq_names[0:20])
 
 
 #input_ids = torch.tensor(tokenizer.encode("Hello, my dog is cute")).unsqueeze(0)  # Batch size 1
@@ -514,4 +504,18 @@ if __name__ == '__main__':
 #           seq_edges.append('{},{},1,seq'.format(pos1,pos2))
 #    return(seq_edges)
 #
-# 
+    # Spliti into sequences
+
+
+    # numsites * [ scores to everything ] 
+    # [[[seq1-aa1 to seq1], [seq1-aa1 to seq2]], [[seq1-aa2 to seq1], [seq1-aa2 to seq2]], [[seq2-aa1 to seq1], [seq2-aa1 to seq2]], [[seq2-aa2 to seq1], [seq2-aa2 to seq2]]]
+    #numseqs * padded_seqlen * numseqs * padded seqlen
+
+
+    #I_list_split =  [I[i:i + padded_seqlen] for i in range(0, len(I), padded_seqlen)]
+    #print(len(I))
+    #print(len(I_list_split))
+    #print(a) 
+ #import matplotlib.pyplot as plt
+#import seaborn as sns; sns.set() 
+ 
