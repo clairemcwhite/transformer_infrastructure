@@ -2,7 +2,7 @@ from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, 
 import faiss
 fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 from sentence_transformers import util
-from iteration_utilities import  duplicates, unique_everseen
+#from iteration_utilities import  duplicates, unique_everseen
 
 from Bio import SeqIO
 import pickle
@@ -12,10 +12,11 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
 
+import networkx as nx
 from pandas.core.common import flatten 
 import pandas as pd 
-import matplotlib.pyplot as plt
-import seaborn as sns; sns.set() 
+#import matplotlib.pyplot as plt
+#import seaborn as sns; sns.set() 
  
 
 def reshape_flat(hstates_list):
@@ -206,9 +207,39 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
  
          outstring = "{}-{}-{},{}-{}-{},{}\n".format(x[0], x[5], x[1], x[2], x[6], x[3], x[4])
          outfile.write(outstring)
+
+
+    edges = []
+    for x in filtered_hitlist[::1]:
+        node1_id = "{}-{}-{}".format(x[0], x[5], x[1]) 
+        node2_id = "{}-{}-{}".format(x[2], x[6], x[3])
+        edges.append((node1_id, node2_id))
      # >>> edges = [(1, 5), (4, 2), (4, 3), (5, 4), (6, 3), (7, 6), (8, 9)]
-     #>>> graph = nx.Graph(edges) 
-     #[s for s in nx.enumerate_all_cliques(G) if len(s) > 1]
+    G = nx.Graph(edges)
+    print("Find all fully connected cliques of size > 2") 
+    # Watch for exponential...
+    all_cliques = list(nx.enumerate_all_cliques(G))
+    fc_cliques = []
+    fc_cliques_nodes = []
+    # Start from largest potential cluster, count down to size 3
+    for i in range(numseqs, 2, -1):
+        fc = [s for s in all_cliques if len(s) == i]
+        print(i)
+        for c in fc:
+           if not any(item in c for item in fc_cliques_nodes):
+               print(c)
+               print(fc_cliques_nodes)
+
+               fc_cliques.append(c) 
+        fc_cliques_nodes = list(flatten(fc_cliques))
+        #a = [a for a in fc if no any(item in List1 for item in List2)
+
+    #for x in fc_cliques:
+    #  for y in
+
+    #fc = [s for s in nx.enumerate_all_cliques(G) if len(s) > 2] 
+    #print(fc)
+
      #>>> [tuple(c) for c in nx.connected_components(graph)]
      #[(1, 2, 3, 4, 5, 6, 7), (8, 9)]
 
@@ -229,7 +260,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     #     bestmatch = np.argmax(cosine_scores_a_b[i])
     
  
-    extracted_seqs = [D[index_list] for index_list in indices]
+    #extracted_seqs = [D[index_list] for index_list in indices]
 
     # Split indexes 
     #I_list = list(flatten(I))
