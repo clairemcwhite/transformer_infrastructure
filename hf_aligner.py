@@ -12,7 +12,6 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
 
-import networkx as nx
 import igraph
 from pandas.core.common import flatten 
 import pandas as pd 
@@ -168,23 +167,64 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
       # If do reverse first, don't have to do second resort
       for x in filtered_hitlist[::1]:
  
-         outstring = "{}-{}-{},{}-{}-{},{}\n".format(x[0], x[5], x[1], x[2], x[6], x[3], x[4])
+         outstring = "s{}-{}-{},s{}-{}-{},{}\n".format(x[0], x[1], x[5], x[2], x[3], x[6], x[4])
          outfile.write(outstring)
 
 
     edges = []
     for x in filtered_hitlist[::1]:
-        node1_id = "{}-{}-{}".format(x[0], x[5], x[1]) 
-        node2_id = "{}-{}-{}".format(x[2], x[6], x[3])
+        node1_id = "s{}-{}-{}".format(x[0], x[1], x[5]) 
+        node2_id = "s{}-{}-{}".format(x[2], x[3], x[6])
         edges.append((node1_id, node2_id))
      # >>> edges = [(1, 5), (4, 2), (4, 3), (5, 4), (6, 3), (7, 6), (8, 9)]
-    G = igraph.Graph(edges=edges, directed=False)
+    G = igraph.Graph.TupleList(edges=edges, directed=False)
     # Remove multiedges and loops
     G = G.simplify()
     
 
+    #fastgreedy = G.community_fastgreedy().as_clustering()
+    #print("fastgreedy")
+    #print(fastgreedy)
 
 
+    walktrap = G.community_walktrap(steps = 1).as_clustering()
+    print("walktrap1")
+    print(walktrap)
+
+    clusters = walktrap.membership
+    vertices = G.vs()["name"]
+    cluster_memberships = list(zip(clusters, vertices))
+ 
+    with open("clustertest.csv", "w") as outfile:
+       for c in cluster_memberships:
+            outstring = "{},{}\n".format(c[0], c[1])
+            print(outstring)
+            outfile.write(outstring)
+            
+        
+
+    #walktrap = G.community_walktrap(steps = 2).as_clustering()
+    #print("walktrap2")
+    #print(walktrap)
+
+
+    #walktrap = G.community_walktrap(steps = 3).as_clustering()
+    #print("walktrap3")
+    #print(walktrap)
+
+    #walktrap = G.community_walktrap(steps = 4).as_clustering()
+    #print("walktrap3")
+    #print(walktrap)
+
+    
+    #print("infomap")
+    #infomap =  G.community_infomap()
+    #print(infomap)
+
+    #print("edge betweenness")
+    #edge_betweenness =  G.community_edge_betweenness(directed = False).as_clustering()
+    #print(edge_betweenness)
+ 
 #    print("Find all fully connected cliques of size > 2") 
 #    # Watch for exponential...
 #    # This is not sustainable
