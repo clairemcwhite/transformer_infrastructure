@@ -143,7 +143,7 @@ def get_hidden_states(seqs, model, tokenizer, layers):
     
     #BramVanroy  https://github.com/huggingface/transformers/issues/1328#issuecomment-534956703
     #Concatenate final for hidden states into long vector
-    pooled_output = torch.cat(tuple([hidden_states[i] for i in [-4, -3, -2, -1]]), dim=-1)
+    pooled_output = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
 
     # If output shape is [len(seqs), 3, x], make sure there are spaces between each amino acid
     # 3 - CLS,seq,END

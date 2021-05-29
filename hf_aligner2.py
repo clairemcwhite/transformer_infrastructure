@@ -113,72 +113,75 @@ def sort_distances_by_index3(D, I, padded_seqlen):
     return(D)
 
 
-
-def sort_distances_by_index2(D, I, padded_seqlen):
-
-    # WAYYY too slow, return only top hits, do without index
-    # Sort distances by index (default returns in descending order)
-    D_tmp = []
-    for i in range(len(I)):
-
-
-         sorted_D = [x for _,x in sorted(zip(I[i],D[i]))]
-         sorted_D_split = [sorted_D[i:i + padded_seqlen] for i in range(0, len(sorted_D), padded_seqlen)]
-         D_tmp.append(sorted_D_split)
- 
-    D =  [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
-    return(D)
-
-
-def sort_distances_by_index2(D, I, padded_seqlen):
-
-    # WAYYY too slow, return only top hits, do without index
-    # Sort distances by index (default returns in descending order)
-    D_tmp = []
-    for i in range(len(I)):
-         sorted_D = [x for _,x in sorted(zip(I[i],D[i]))]
-         sorted_D_split = [sorted_D[i:i + padded_seqlen] for i in range(0, len(sorted_D), padded_seqlen)]
-         D_tmp.append(sorted_D_split)
- 
-    D =  [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
-    return(D)
-
-
-
-def get_rbhits(D, seqlens, seqs, masks):
-
-    hitlist = []
-    for query_seq in range(len(D)):
+def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
+   I_tmp = []
+   D_tmp = []
+   print(D.shape)
+   # For each amino acid...
+   for i in range(len(I)):
+      # Make empty list of lists, one per sequence
+      I_query =  [[] for i in range(numseqs)]
+      D_query = [[] for i in range(numseqs)]
      
-        for query_aa in range(len(D[query_seq])):
-           if query_aa >= seqlens[query_seq]:
+      for j in range(len(I[i])):
+           try:
+              aa = index_to_aa[I[i][j]]
+              seqnum = get_seqnum(aa)
+              I_query[seqnum].append(aa) 
+              D_query[seqnum].append(D[i][j])
+           except Exception as E:
                continue
+      I_tmp.append(I_query)
+      D_tmp.append(D_query)
+   D =  [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
+   I =  [I_tmp[i:i + padded_seqlen] for i in range(0, len(I_tmp), padded_seqlen)]
+
+   return(D, I)
+
+
+
+def get_rbhits(D, I, index_to_aa, padded_seqlen):
+   aa_to_index = {value: key for key, value in index_to_aa.items()}
+
+   hitlist = []
+   for query_seq in range(len(D)):
+     
+
+      for query_aa in range(len(D[query_seq])):
+
+           # Non-sequence padding isn't in dictionary
+           try:
+              
+              query_id = index_to_aa[query_seq * padded_seqlen + query_aa] 
+           
+
+           except Exception as E:
+              continue
+           
            for target_seq in range(len(D[query_seq][query_aa])):
-
                scores = D[query_seq][query_aa][target_seq]
-               if masks:
-                  # if mask[i] == "show, keep the score, else change to zero
-                  # This is used to only look in real sequence, or between guideposts
-                  #if masks[query_seq][i] == 0:
-                  #   continue 
+               if len(scores) == 0:
+                  continue
+               ids = I[query_seq][query_aa][target_seq]
+               #print(target_seq)
+               #print(query_id)
+               #print(scores)
+               #print(ids)
+              
+               bestscore = scores[0]
+               bestmatch_id = ids[0]
+               hitlist.append([query_id, bestmatch_id, bestscore])
+               #recip_scores = D[target_seq][bestmatch][query_seq]
 
-                  target_mask = masks[target_seq]
-                  scores = [scores[i] if target_mask[i] == "show" else 0 for i in range(len(scores))]
-               bestscore = max(scores)
-               bestmatch = np.argmax(scores)
-               # Check if the query aa is the reciprocal best hit
-               recip_scores = D[target_seq][bestmatch][query_seq]
-               if masks:
-                  query_mask = masks[query_seq]
-                  recip_scores = [recip_scores[i] if query_mask[i] == "show" else 0 for i in range(len(recip_scores)) ]
- 
-               recip_bestmatch = np.argmax(recip_scores) 
-               
-               if recip_bestmatch == query_aa:
-                  #print("{}-{},{}-{},{},{},{}".format(query_seq, query_aa, target_seq, bestmatch, bestscore, seqs[query_seq][query_aa], seqs[target_seq][bestmatch]))
-                  hitlist.append([query_seq, query_aa, target_seq, bestmatch, bestscore, seqs[query_seq][query_aa], seqs[target_seq][bestmatch]])
+               #recip_bestmatch = np.argmax(recip_scores)
 
-    return(hitlist)
+               #recip_bestmatch_id = I[target_seq][bestmatch][query_seq][recip_bestmatch]
+               #print(query_id,recip_bestmatch_id, bestscore)
+               #if recip_bestmatch_id == query_id:
+               #     print(query_id,recip_bestmatch_id, bestscore)
+
+   return(hitlist) 
+
 
 def get_cluster_dict(clusters, seqs):
 
@@ -249,35 +252,59 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     print("embedding_shape", hidden_states.shape)
 
 
-
-    #d = hidden_states.shape[1]
-    #index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
-    #faiss.normalize_L2(hidden_states)
-    #index.add(hidden_states)
+    #    seqs_ids = []
+    #for i in range(len(seqs)):
+    #    seq = []
+    #    for j in range(len(seqs[i])):
+    #       seq.append("s{}-{}-{}".format(i, j, seqs[i][j]))
+    #    seqs_ids.append(seq)
  
+    # Convert index position to amino acid position
+    index_to_aa = {}
+    for i in range(len(seqs)):
+        for j in range(padded_seqlen):
+           if j >= seqlens[i]:
+             continue 
+           aa = "s{}-{}-{}".format(i, j, seqs[i][j])    
+           
+           index_to_aa[i * padded_seqlen + j] = aa
+
+   
     index = build_index(hidden_states)
      
-    D, I =  index.search(hidden_states, k = numseqs*padded_seqlen) 
- 
+    print("search index")
+    D, I =  index.search(hidden_states, k = numseqs*3) 
+    #print(D)
+    #print(I)
+    print("format indicies") 
+    D, I = split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen) 
+
+    #print(D)
+    #print(I)
+         
+    #print(D)
+    #print(I)
+    print("get_hitlist")
+    hitlist = get_rbhits(D, I, index_to_aa, padded_seqlen)
     
-    hidden_states = ""
-    #np.set_printoptions(threshold=np.inf)
-    print(I)
-    print(len(I))
-    print(D)
-    print(numseqs)
-    print(padded_seqlen) 
+    #for hit in hitlist:
+    #  print(hit) 
+    print(len(hitlist))
+    #print(np.array(D).shape)
+    #print(np.array(I).shape)
+    return(0)
+
    
     # Sort distances by index (default returns in descending order)
     # Write something different for this
-    print("start old sort")
-    D = sort_distances_by_index2(D, I, padded_seqlen)
+    #print("start old sort")
+    #D1 = sort_distances_by_index2(D, I, padded_seqlen)
     #print("start new sort")
     #D = sort_distances_by_index3(D, I, padded_seqlen)
     #print("end new sort")
     #print(D1)
     #print(D2)
-    return(0)
+
     #print(np.array(D1).shape)
     #print(np.array(D).shape)
 
@@ -299,10 +326,11 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     # Get all-by-all reciprocal best hits 
     # make function, using mask. Replace vectors with zero
     print("start getting rbhs")
-    hitlist = get_rbhits(D, seqlens, seqs, masks)
+    hitlist = get_rbhits(D, I)
+    #hitlist = get_rbhits(D, seqlens, seqs, masks)
     print("got rbh")
     #To do: Make matchstate object
-    return 0
+
     # Remove streak conflict matches
     filtered_hitlist = []
     for i in range(len(seqs)):
@@ -406,7 +434,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     # If a cluster has fewer then 3 members, remove them
     clusters_filt = []
     for i in range(len(clusters_list)): 
-         seqcounts = [0] * numseqs
+         seqcounts = [0] * numseqs # Will each one replicated like with [[]] * n?
          if len(clusters_list[i]) < 3:
            continue
          for pos in clusters_list[i]:
