@@ -308,7 +308,7 @@ def get_cluster_dict(clusters, seqs):
     return(pos_to_cluster, clustid_to_clust)
  
 def get_cluster_orders(cluster_dict, seqs):
- 
+    # This is getting path of each sequence through clusters 
     cluster_orders = []
 
     for i in range(len(seqs)):
@@ -472,12 +472,51 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
 
     pos_to_cluster_dag, clustid_to_clust_dag = get_cluster_dict(clusters_filt_dag, seqs)
     cluster_orders_dag = get_cluster_orders(pos_to_cluster_dag, seqs)
+    print(cluster_orders_dag)
 
+    print("Get a single cluster order with minim")
     G_order = graph_from_cluster_orders(cluster_orders_dag)
     G_order = G_order.simplify()
+    # NOPE
     cluster_order = [x['name'] for x in G_order.spanning_tree().vs]
- 
+    #for x in G_order.vs:
+    #   print("index", x.index, "name", x['name']) 
 
+    # Note: this is in vertex indices. Need to convert to name to get clustid
+    topo_sort_indices = G_order.topological_sorting()
+    cluster_order = []
+    for i in topo_sort_indices:
+       cluster_order.append(G_order.vs[i]['name'])
+    print(cluster_order)
+
+ 
+    print("For each sequence check that the cluster order doesn't conflict with aa order")
+
+    print(pos_to_cluster_dag)    
+    clusters_w_order_conflict= []
+    for i in range(numseqs): 
+        prev_cluster = 0
+        for j in range(len(seqs[i])):
+           key = "s{}-{}-{}".format(i, j, seqs[i][j])
+           try:
+               clust = pos_to_cluster_dag[key]
+           except Exception as E:
+               continue
+
+           order_index = cluster_order.index(clust)
+           print(key, clust, order_index)
+           if order_index < prev_cluster:
+                clusters_w_order_conflict.append(clust)
+                print("order_violation", order_index, clust)
+           prev_cluster  = order_index
+    print(cluster_order)
+    print(clusters_w_order_conflict)
+    cluster_order = [x for x in cluster_order if x not in clusters_w_order_conflict]
+
+    print(cluster_order)
+    clustid_to_clust_dag = {key:val for key, val in clustid_to_clust_dag.items() if key  in cluster_order}
+
+    
     make_alignment(cluster_order, numseqs, clustid_to_clust_dag)
    
 
@@ -617,7 +656,7 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[0:100], seq_names[0:100])
+    get_similarity_network(layers, model_name, seqs[0:20], seq_names[0:20])
 
     # 
     #http://pfam.xfam.org/protein/A0A1I7UMU0
