@@ -19,9 +19,191 @@ import pandas as pd
 import collections
 
 
+# This needs to be replaced with class xture
 def get_seqnum(pos):
     seqnum = int(pos.split("-")[0].replace("s", ""))
     return(seqnum)
+# This needs to be replaced with class xture
+
+def get_seqpos(pos):
+    seqpos = int(pos.split("-")[1])
+    return(seqpos)
+# This needs to be replaced with class xture
+
+def get_seqaa(pos):
+    seqaa = pos.split("-")[2]
+    return(seqaa)
+
+def graph_from_cluster_orders(cluster_orders):
+    order_edges = []
+    for order in cluster_orders:
+       for i in range(len(order) - 1):
+          edge = (order[i], order[i + 1])
+          #if edge not in order_edges:
+          order_edges.append((order[i], order[i + 1]))
+
+    G_order = igraph.Graph.TupleList(edges=order_edges, directed=True)
+    return(G_order)
+
+
+def make_alignment(cluster_order, numseqs, clustid_to_clust):
+    # Set up a bunch of vectors of "-"
+    # Replace with matches
+    # cluster_order = list in the order that clusters go
+    alignment =  [["-"] * len(cluster_order) for i in range(numseqs)]
+    for order in range(len(cluster_order)):
+       cluster = clustid_to_clust[cluster_order[order]]
+       for x in cluster:
+           c_dict = {}
+           for pos in x:
+               c_dict[get_seqnum(x)]  = x
+           for seqnum in range(numseqs):
+               #Potential some extra iteration happening here, but fine
+               try:
+                  alignment[seqnum][order] = get_seqaa(c_dict[seqnum])
+               except Exception as E:
+                   continue
+
+    for line in alignment:
+       print("".join(line))
+ 
+def remove_feedback_edges(cluster_orders, clusters_filt):
+
+    G_order = graph_from_cluster_orders(cluster_orders)
+    weights = [1] * len(G_order.es)
+
+    # Remove multiedges and self loops
+    #print(G_order)
+    G_order.es['weight'] = weights
+    G_order = G_order.simplify(combine_edges=sum)
+
+    # The edges to remove to make a directed acyclical graph
+    # Corresponds to "look backs"
+    # With weight, fas, with try to remove lighter edges
+    # Feedback arc sets are edges that point backward in directed graph
+    
+    fas = G_order.feedback_arc_set(weights = 'weight')
+
+  
+    i = 0
+    to_remove = []
+    for edge in G_order.es():
+        source_vertex = G_order.vs[edge.source]["name"]
+        target_vertex = G_order.vs[edge.target]["name"]
+        if i in fas:
+            to_remove.append([source_vertex, target_vertex])
+        i = i + 1
+   
+    cluster_orders_dag = []
+    remove_dict = {}
+    for i in range(len(cluster_orders)):
+      remove = []
+      for j in range(len(cluster_orders[i]) - 1):
+ 
+           if [cluster_orders[i][j], cluster_orders[i][j +1]] in to_remove:
+               #print(cluster_orders[i])
+ 
+               #print(cluster_orders[i][j], cluster_orders[i][j + 1])
+               remove.append(cluster_orders[i][j])
+               remove.append(cluster_orders[i][j + 1])
+           remove_dict[i] = list(set(remove))
+    #print(remove_dict)
+    clusters_filt_dag = []
+    for i in range(len(clusters_filt)):
+         clust = []
+         for seq in clusters_filt[i]:
+            seqsplit = seq.split("-")
+            seqnum = int(seqsplit[0].replace("s", ""))
+            remove_from = remove_dict[seqnum] 
+            if i in remove_from:
+                print("removing ", i, seqnum) 
+            else:
+               clust.append(seq)
+         clusters_filt_dag.append(clust)
+ 
+    return(clusters_filt_dag)
+
+def remove_streakbreakers(hitlist, seqs, seqlens, streakmin = 3):
+    # Remove initial RBHs that cross a streak of matches
+    # Simplify network for feedback search
+    filtered_hitlist = []
+    for i in range(len(seqs)):
+       query_prot = [x for x in hitlist if get_seqnum(x[0]) == i]
+       for j in range(len(seqs)):
+          target_prot = [x for x in query_prot if get_seqnum(x[1]) == j]
+         
+          # check shy this is happening extra at ends of sequence
+          #print("remove lookbehinds")
+          prevmatch = 0
+          seq_start = -1
+          streak = 0
+
+          no_lookbehinds = []
+          for match_state in target_prot:
+               #print(match_state)
+               if get_seqpos(match_state[1]) <= seq_start:
+                     #print("lookbehind prevented")
+                     streak = 0 
+                     continue
+               no_lookbehinds.append(match_state)
+
+               if get_seqpos(match_state[1]) - prevmatch == 1:
+                  streak = streak + 1
+                  if streak >= streakmin:  
+                     seq_start = get_seqpos(match_state[1])
+               else:
+                  streak = 0
+               prevmatch = get_seqpos(match_state[1])
+
+          #print("remove lookaheads")
+          prevmatch = seqlens[j]
+          seq_end = seqlens[j]
+          streak = 0
+
+          filtered_target_prot = []
+          for match_state in no_lookbehinds[::-1]:
+               #print(match_state, streak, prevmatch)
+               if get_seqpos(match_state[1]) >= seq_end:
+                    #print("lookahead prevented")
+                    streak = 0
+                    continue
+               filtered_target_prot.append(match_state)
+               if prevmatch - get_seqpos(match_state[1]) == 1:
+                  streak = streak + 1
+                  if streak >= streakmin:  
+                     seq_end = get_seqpos(match_state[1])
+               else:
+                  streak = 0
+               prevmatch = get_seqpos(match_state[1])
+ 
+          filtered_hitlist = filtered_hitlist + filtered_target_prot
+    return(filtered_hitlist) 
+
+
+
+def remove_doubles(clusters_list, numseqs):
+
+    clusters_filt = []
+    for i in range(len(clusters_list)): 
+         seqcounts = [0] * numseqs # Will each one replicated like with [[]] * n?
+         if len(clusters_list[i]) < 3:
+           continue
+         for pos in clusters_list[i]:
+            seqnum = get_seqnum(pos)
+            #print(seq, seqnum)
+            seqcounts[seqnum] = seqcounts[seqnum] + 1
+         remove_list = [i for i in range(len(seqcounts)) if seqcounts[i] > 1]
+         clust = []
+         for pos in clusters_list[i]:
+            seqnum =  get_seqnum(pos)
+            if seqnum in remove_list:
+               #print("{} removed from cluster {}".format(seq, i))
+               continue
+            else:
+               clust.append(pos)
+         clusters_filt.append(clust)
+    return(clusters_filt)
+
 
 def remove_low_match_prots(numseqs, seqlens, clusters, threshold_min = 0.5): 
     ############## No badly aligning sequences check
@@ -58,61 +240,6 @@ def reshape_flat(hstates_list):
     hidden_states = np.reshape(hstates_list, (hstates_list.shape[0]*hstates_list.shape[1], hstates_list.shape[2]))
     return(hidden_states)
 
-# BAD
-def sort_distances_by_index(D, I, numseqs, padded_seqlen):
-    D_tmp = []
-
-    for x in range(len(D)):
-       print(x)
-       p  = D[x]
-       idx = I[x]
-
-       new_p = []
-       for i in range(0, numseqs):
-          # All sequences are padded to the length of the longest sequence
-           target = []
-           for pos in range(0, padded_seqlen):
-               # Only retrieve info from positions that aren't padding
-               #if pos > seqlens[i] -1 :
-               #   continue
-               #print(pos) 
-               index_num = padded_seqlen * i + pos
-               target.append(round(np.asscalar(p[np.where(idx == index_num)]), 5))
-               #new_p.append(p[idx.index(index_num)])
-           new_p.append(target)
-       D_tmp.append(new_p)
-
-    D_split = [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
- 
-    return(D_split)
-    #return(list(np.split(np.array(new_D), numseqs)))
-
-      
-           #for prot in D:
-            #   prot_D = []
-                               
-
-            #aa = seqs[i][pos]
-            #identified = [i, aa, pos]
-            #index_to_protpos[index_num] = identified
-
-def sort_distances_by_index3(D, I, padded_seqlen):
-
-    # WAYYY too slow, return only top hits, do without index
-    # Sort distances by index (default returns in descending order)
-    D_tmp = []
-    for i in range(len(I)):
-
-         D_I_df = pd.DataFrame(zip(I[i], D[i]), columns =['I', 'D']).sort_values('I')
-         sorted_D = D_I_df['D'].tolist()
-         #sorted_D = [x for _,x in sorted(zip(I[i],D[i]))]
-         sorted_D_split = [sorted_D[i:i + padded_seqlen] for i in range(0, len(sorted_D), padded_seqlen)]
-         D_tmp.append(sorted_D_split)
- 
-    D =  [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
-    return(D)
-
-
 def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
    I_tmp = []
    D_tmp = []
@@ -140,7 +267,7 @@ def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
 
 
 
-def get_rbhits(D, I, index_to_aa, padded_seqlen):
+def get_besthits(D, I, index_to_aa, padded_seqlen):
    aa_to_index = {value: key for key, value in index_to_aa.items()}
 
    hitlist = []
@@ -148,12 +275,9 @@ def get_rbhits(D, I, index_to_aa, padded_seqlen):
      
 
       for query_aa in range(len(D[query_seq])):
-
            # Non-sequence padding isn't in dictionary
            try:
-              
               query_id = index_to_aa[query_seq * padded_seqlen + query_aa] 
-           
 
            except Exception as E:
               continue
@@ -163,38 +287,28 @@ def get_rbhits(D, I, index_to_aa, padded_seqlen):
                if len(scores) == 0:
                   continue
                ids = I[query_seq][query_aa][target_seq]
-               #print(target_seq)
-               #print(query_id)
-               #print(scores)
-               #print(ids)
               
                bestscore = scores[0]
                bestmatch_id = ids[0]
                hitlist.append([query_id, bestmatch_id, bestscore])
-               #recip_scores = D[target_seq][bestmatch][query_seq]
-
-               #recip_bestmatch = np.argmax(recip_scores)
-
-               #recip_bestmatch_id = I[target_seq][bestmatch][query_seq][recip_bestmatch]
-               #print(query_id,recip_bestmatch_id, bestscore)
-               #if recip_bestmatch_id == query_id:
-               #     print(query_id,recip_bestmatch_id, bestscore)
 
    return(hitlist) 
 
 
 def get_cluster_dict(clusters, seqs):
 
-    cluster_dict = {}
+    pos_to_cluster = {}
+    clustid_to_clust = {}
     for i in range(len(clusters)):
-       for seq in clusters[i]:
-              cluster_dict[seq] = i
+       clust = clusters[i]
+       clustid_to_clust[i] = clust 
+       for seq in clust:
+              pos_to_cluster[seq] = i
 
-    return(cluster_dict)
+    return(pos_to_cluster, clustid_to_clust)
  
 def get_cluster_orders(cluster_dict, seqs):
-
-   
+ 
     cluster_orders = []
 
     for i in range(len(seqs)):
@@ -252,12 +366,6 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     print("embedding_shape", hidden_states.shape)
 
 
-    #    seqs_ids = []
-    #for i in range(len(seqs)):
-    #    seq = []
-    #    for j in range(len(seqs[i])):
-    #       seq.append("s{}-{}-{}".format(i, j, seqs[i][j]))
-    #    seqs_ids.append(seq)
  
     # Convert index position to amino acid position
     index_to_aa = {}
@@ -268,138 +376,48 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
            aa = "s{}-{}-{}".format(i, j, seqs[i][j])    
            
            index_to_aa[i * padded_seqlen + j] = aa
-
+    print("Build index")
    
     index = build_index(hidden_states)
      
     print("search index")
-    D, I =  index.search(hidden_states, k = numseqs*3) 
-    #print(D)
-    #print(I)
-    print("format indicies") 
-    D, I = split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen) 
+    D1, I1 =  index.search(hidden_states, k = numseqs*padded_seqlen) 
 
-    #print(D)
-    #print(I)
-         
-    #print(D)
-    #print(I)
-    print("get_hitlist")
-    hitlist = get_rbhits(D, I, index_to_aa, padded_seqlen)
-    
-    #for hit in hitlist:
-    #  print(hit) 
-    print(len(hitlist))
-    #print(np.array(D).shape)
-    #print(np.array(I).shape)
-    return(0)
+    print("Split results into proteins") 
+    D2, I2 = split_distances_to_sequence(D1, I1, index_to_aa, numseqs, padded_seqlen) 
 
-   
-    # Sort distances by index (default returns in descending order)
-    # Write something different for this
-    #print("start old sort")
-    #D1 = sort_distances_by_index2(D, I, padded_seqlen)
-    #print("start new sort")
-    #D = sort_distances_by_index3(D, I, padded_seqlen)
-    #print("end new sort")
-    #print(D1)
-    #print(D2)
-
-    #print(np.array(D1).shape)
-    #print(np.array(D).shape)
-
-    hitlist = []
-
-
-
-    # set up masks to hide non-sequence padding
-    masks = []
-    for i in range(0, numseqs):
-       mask = ["hide"] * padded_seqlen # Repeat "hide" x times
+    print("get best hitlist")
+    hitlist_top = get_besthits(D2, I2, index_to_aa, padded_seqlen)
  
-       for j in range(0, seqlens[i]):
-           mask[j] = "show"
-       masks.append(mask)
+    print("get reciprocal best hits") 
+    G_hitlist = igraph.Graph.TupleList(edges=hitlist_top, directed=True) 
 
-    #for x in range(len(numseqs)):
-    #  masks.append(repeat(0, padded_seqlen)
-    # Get all-by-all reciprocal best hits 
-    # make function, using mask. Replace vectors with zero
-    print("start getting rbhs")
-    hitlist = get_rbhits(D, I)
-    #hitlist = get_rbhits(D, seqlens, seqs, masks)
-    print("got rbh")
-    #To do: Make matchstate object
+    rbh_bool = G_hitlist.is_mutual()
+    
+    hitlist = []
+    for i in range(len(G_hitlist.es())):
+        if rbh_bool[i] == True:
+           source_vertex = G_hitlist.vs[G_hitlist.es()[i].source]["name"]
+           target_vertex = G_hitlist.vs[G_hitlist.es()[i].target]["name"]
+           hitlist.append([source_vertex, target_vertex])
+
+    print("got reciprocal besthits")
 
     # Remove streak conflict matches
-    filtered_hitlist = []
-    for i in range(len(seqs)):
-       query_prot = [x for x in hitlist if x[0] == i]
-       for j in range(len(seqs)):
-          target_prot = [x for x in query_prot if x[2] == j]
-          # check shy this is happening extra at ends of sequence
-          #print("remove lookbehinds")
-          prevmatch = 0
-          seq_start = -1
-          streak = 0
-
-          no_lookbehinds = []
-          for match_state in target_prot:
-               #print(match_state)
-               if match_state[3] <= seq_start:
-                     #print("lookbehind prevented")
-                     streak = 0 
-                     continue
-               no_lookbehinds.append(match_state)
-
-               if match_state[3] - prevmatch == 1:
-                  streak = streak + 1
-                  if streak > 2:  
-                     seq_start = match_state[3]
-               else:
-                  streak = 0
-               prevmatch = match_state[3]
-
-          #print("remove lookaheads")
-          prevmatch = seqlens[j]
-          seq_end = seqlens[j]
-          streak = 0
-
-          filtered_target_prot = []
-          for match_state in no_lookbehinds[::-1]:
-               #print(match_state, streak, prevmatch)
-               if match_state[3] >= seq_end:
-                    #print("lookahead prevented")
-                    streak = 0
-                    continue
-               filtered_target_prot.append(match_state)
-               if prevmatch - match_state[3] == 1:
-                  streak = streak + 1
-                  if streak > 2:  
-                     seq_end = match_state[3]
-               else:
-                  streak = 0
-               prevmatch = match_state[3]
- 
-          filtered_hitlist = filtered_hitlist + filtered_target_prot
+    filtered_hitlist = remove_streakbreakers(hitlist, seqs, seqlens, streakmin = 3)
 
     #print(pd.DataFrame(filtered_hitlist))
     with open("testnet.csv", "w") as outfile:
       outfile.write("aa1,aa2,score\n")
       # If do reverse first, don't have to do second resort
-      for x in filtered_hitlist[::1]:
- 
-         outstring = "s{}-{}-{},s{}-{}-{},{}\n".format(x[0], x[1], x[5], x[2], x[3], x[6], x[4])
+      for x in filtered_hitlist:
+         outstring = "{},{}\n".format(x[0], x[1])        
+         #outstring = "s{}-{}-{},s{}-{}-{},{}\n".format(x[0], x[1], x[5], x[2], x[3], x[6], x[4])
          outfile.write(outstring)
 
     ######################################### Do walktrap clustering
-    edges = []
-    for x in filtered_hitlist[::1]:
-        node1_id = "s{}-{}-{}".format(x[0], x[1], x[5]) 
-        node2_id = "s{}-{}-{}".format(x[2], x[3], x[6])
-        edges.append((node1_id, node2_id))
-     # >>> edges = [(1, 5), (4, 2), (4, 3), (5, 4), (6, 3), (7, 6), (8, 9)]
-    G = igraph.Graph.TupleList(edges=edges, directed=False)
+    # Why isn't this directed?
+    G = igraph.Graph.TupleList(edges=filtered_hitlist, directed=True)
     # Remove multiedges and self loops
     G = G.simplify()
     
@@ -411,7 +429,6 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     print("start walktrap")
     walktrap = G.community_walktrap(steps = 1).as_clustering()
     print("walktrap1")
-    print(walktrap)
 
     cluster_ids = walktrap.membership
     vertices = G.vs()["name"]
@@ -421,185 +438,119 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
        for c in clusters:
             outstring = "{},{}\n".format(c[0], c[1])
             outfile.write(outstring)
-    #print(walktrap[0])
-    #print(walktrap[1])
 
     
     clusters_list = []
     for i in range(len(walktrap)):
          clusters_list.append([vertices[x] for x in walktrap[i]])
 
-    ####### No doubles check
+
+    ##############################
+    # No doubles check
     # If a cluster has two entries from same seq, remove thos
     # If a cluster has fewer then 3 members, remove them
-    clusters_filt = []
-    for i in range(len(clusters_list)): 
-         seqcounts = [0] * numseqs # Will each one replicated like with [[]] * n?
-         if len(clusters_list[i]) < 3:
-           continue
-         for pos in clusters_list[i]:
-            seqnum = get_seqnum(pos)
-            #print(seq, seqnum)
-            seqcounts[seqnum] = seqcounts[seqnum] + 1
-         remove_list = [i for i in range(len(seqcounts)) if seqcounts[i] > 1]
-         clust = []
-         for pos in clusters_list[i]:
-            seqnum =  get_seqnum(pos)
-            if seqnum in remove_list:
-               #print("{} removed from cluster {}".format(seq, i))
-               continue
-            else:
-               clust.append(pos)
-         clusters_filt.append(clust)
-    print("Remove poorly matching seqs after initial RBH seach")
-    clusters_filt = remove_low_match_prots(numseqs, seqlens, clusters_filt, threshold_min = 0.5) 
 
-  
+    clusters_filt = remove_doubles(clusters_list, numseqs)
+
+    clusters_filt = remove_low_match_prots(numseqs, seqlens, clusters_filt, threshold_min = 0.5) 
+    print("Remove poorly matching seqs after initial RBH seach")
+
+    ######################################3
+    # Remove feedback loops in paths through clusters
     # Dictionary posname:clusternum 
     # For getting consensus cluster order
-    cluster_dict = get_cluster_dict(clusters_filt, seqs)
-    cluster_orders = get_cluster_orders(cluster_dict, seqs)
-  
+    pos_to_clustid, clustid_to_clust= get_cluster_dict(clusters_filt, seqs)
+    cluster_orders = get_cluster_orders(pos_to_clustid, seqs)
 
+    print("Find directed acyclic graph")   
+    clusters_filt_dag = remove_feedback_edges(cluster_orders, clusters_filt)
  
-    #for x in cluster_orders:
-    #   print(x)
-   
-    order_edges = []
-    for order in cluster_orders:
-       for i in range(len(order) - 1):
-          edge = (order[i], order[i + 1])
-          #if edge not in order_edges:
-          order_edges.append((order[i], order[i + 1]))
-    weights = [1] * len(order_edges)
-
-    G_order = igraph.Graph.TupleList(edges=order_edges, directed=True)
-    # Remove multiedges and self loops
-    #print(G_order)
-    G_order.es['weight'] = weights
-    G_order = G_order.simplify(combine_edges=sum)
-
-    # The edges to remove to make a directed acyclical graph
-    # Corresponds to "look backs"
-    # With weight, fas, with try to remove lighter edges
-    # Feedback arc sets are edges that point backward in directed graph
-    
-    fas = G_order.feedback_arc_set(weights = 'weight')
-
-  
-    i = 0
-    to_remove = []
-    for edge in G_order.es():
-        source_vertex = G_order.vs[edge.source]["name"]
-        target_vertex = G_order.vs[edge.target]["name"]
-        if i in fas:
-            to_remove.append([source_vertex, target_vertex])
-        i = i + 1
-   
-    cluster_orders_dag = []
-    clusters_filt_dag = [] 
-    remove_dict = {}
-    for i in range(len(cluster_orders)):
-      remove = []
-      for j in range(len(cluster_orders[i]) - 1):
- 
-           if [cluster_orders[i][j], cluster_orders[i][j +1]] in to_remove:
-               #print(cluster_orders[i])
- 
-               #print(cluster_orders[i][j], cluster_orders[i][j + 1])
-               remove.append(cluster_orders[i][j])
-               remove.append(cluster_orders[i][j + 1])
-           remove_dict[i] = list(set(remove))
-    #print(remove_dict)
-
-    # Remove positions that violate ordering from cluster list
-    clusters_filt_dag = []
-    for i in range(len(clusters_filt)):
-         clust = []
-         for seq in clusters_filt[i]:
-            seqsplit = seq.split("-")
-            seqnum = int(seqsplit[0].replace("s", ""))
-            remove_from = remove_dict[seqnum] 
-            if i in remove_from:
-                print("removing ", i, seqnum) 
-            else:
-               clust.append(seq)
-         clusters_filt_dag.append(clust)
-    #for x in clusters_filt_dag:
-    #    print(x)
-    print("Remove poorly matching seqs after DAG-ification")
+    print("Removed poorly matching seqs after DAG-ification")
     clusters_filt_dag = remove_low_match_prots(numseqs, seqlens, clusters_filt_dag, threshold_min = 0.5) 
 
-    cluster_dict_dag = get_cluster_dict(clusters_filt_dag, seqs)
-    cluster_orders_dag = get_cluster_orders(cluster_dict_dag, seqs)
+    print("Get cluster order after dag")
 
-    #alignment = np.empty((numseqs, padded_seqlen))
-    alignment = [""] * numseqs
-    header =  range(len(clusters_filt_dag))
-    #alignment.append(header) 
-    for i in  [ 1] : #range(len(seqs)):
-       for j in range(len(seqs[i])):
-          key = "s{}-{}-{}".format(i, j, seqs[i][j])
-          alignment[i] = alignment[i] + seqs[i][j]
-          try:
-             clust = cluster_dict_dag[key]
-             cluster = clusters_filt_dag[clust]
-          except Exception as E:
-             #for k in range(len(seqs)):
-                  cluster = ""
-                  #continue
-                #alignment[k] = alignment[k] + "-"            
-          for k in range(len(seqs)):
-            if i ==k:
-               continue
-            try:
-                cluster_member = [x for x in cluster if x.split("-")[0].replace("s", "") == str(k)]
-                #print(cluster_member)
-                alignment[k]= alignment[k] + cluster_member[0].split("-")[2]
-            except Exception as E:
-               alignment[k] = alignment[k] + "-"
-            
+    pos_to_cluster_dag, clustid_to_clust_dag = get_cluster_dict(clusters_filt_dag, seqs)
+    cluster_orders_dag = get_cluster_orders(pos_to_cluster_dag, seqs)
 
-    for i in range(len(alignment)):
-      print(i, alignment[i])
-    return 0
-          
-       
+    G_order = graph_from_cluster_orders(cluster_orders_dag)
+    G_order = G_order.simplify()
+    cluster_order = [x['name'] for x in G_order.spanning_tree().vs]
  
+
+    make_alignment(cluster_order, numseqs, clustid_to_clust_dag)
+   
+
+
+ 
+    
+    # Observations:
+       #Too much first character dependencyi
+       # Too much end character dependency
+          # Add X on beginning and end seems to fix at least for start
+      # Order is messed up at the end
+     # Uniprot doesn't get the last H either so nbd
+    #for trouble in unassigned:
+
+    #print(trouble)
+
+    unassigned = []
     for i in range(len(seqs)):
-        prevclusts = []
-        nextclusts = []
+        if i == 3:
+           continue
+        prevclust = []
+        nextclust = []
+        unsorted = []
+        last_unsorted = 0
         for j in range(len(seqs[i])):
+           if j <= last_unsorted:
+               continue
+
            key = "s{}-{}-{}".format(i, j, seqs[i][j])
            try:
-
-              clust = cluster_dict_dag[key]
+              # Read to first cluster hit
+              clust = pos_to_cluster_dag[key]
               prevclust = clust
-              prevclusts.append(prevclust)
-              #print(key, clust)
+              #prevclusts.append(prevclust)
+           # If it's not in a clust, it's unsorted
            except Exception as E:
-              unsorted = j
-              if j == 0:
-                  nextclusts = cluster_orders_dag[i:]
-                  prevclusts = []
-              
-              else:
-                  prevclust_index =  cluster_orders_dag[i].index(prevclust) 
-                  if prevclust_index == len(cluster_orders_dag[i]) - 1:
-                      nextclusts = "[]"
-                  else:
-                      nextclusts = cluster_orders_dag[i][prevclust_index + 1 : ]
-              print(prevclusts, key, nextclusts)
+              unsorted = []
+              unsorted.append(key)
+              for k in range(j + 1, len(seqs[i])):
+                  key = "s{}-{}-{}".format(i, k, seqs[i][k])
+                  try:
+                     nextclust = pos_to_cluster_dag[key]
+                     break
+                  except Exception as E:
+                     unsorted.append(key)
+                     last_unsorted = k
+              unassigned.append([prevclust, unsorted, nextclust])
+  
 
 
 
 
-    # Go through each position in the sequence. 
-    # See if it's already in a guide post
-    # If not, find previous and next guidepost within seqeucne
-    # Get those guideposts from query sequences. 
-    #     
 
+
+
+
+
+
+#
+#              if j == 0:
+#                  nextclusts = cluster_orders_dag[i:]
+#              
+#              else:
+#                  prevclust_index =  cluster_orders_dag[i].index(prevclust) 
+#                  if prevclust_index == len(cluster_orders_dag[i]) - 1:
+#                  #    nextclusts = "[]"
+#                  else:
+#                      nextclusts = cluster_orders_dag[i][prevclust_index + 1 : ]
+#              print(prevclusts, key, nextclusts)
+#
+#
+
+#
 
 
  
@@ -631,6 +582,16 @@ if __name__ == '__main__':
            print(seqs[x])
         seqs[x] = seqs[x]
     print("x")
+   
+    local = True
+   
+    if local == True:
+        newseqs = []
+        for seq in seqs:
+             newseq = "X " + seq
+             newseq = newseq + " X"
+             newseqs.append(newseq)
+        seqs = newseqs
 
     # Maybe choose different set of embeddings
     # Avoid final layer?
@@ -649,9 +610,11 @@ if __name__ == '__main__':
     # Doesn't force an alignment,
     # Flags outliers, which can then be match to the hmm if needed
 
-
+    # Choice of layers affects quality
+    # Some layers likely better matchers
+    
     layers = [ -4, -3,-2, -1]
-    #layers = [-5, -4, -3]
+    #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
     get_similarity_network(layers, model_name, seqs[0:100], seq_names[0:100])
@@ -985,4 +948,50 @@ if __name__ == '__main__':
     #for x in all_edges:
     #  print(x)
 
+#
+#    #alignment = np.empty((numseqs, padded_seqlen))
+#    alignment = [""] * numseqs
+#    header =  range(len(clusters_filt_dag))
+#    #alignment.append(header) 
+#    for i in  [ 0] : #range(len(seqs)):
+#       for j in range(len(seqs[i])):
+#          key = "s{}-{}-{}".format(i, j, seqs[i][j])
+#          alignment[i] = alignment[i] + seqs[i][j]
+#          try:
+#             clust = pos_to_cluster_dag[key]
+#             cluster = clusters_filt_dag[clust]
+#          except Exception as E:
+#             #for k in range(len(seqs)):
+#                  cluster = ""
+#                  #continue
+#                #alignment[k] = alignment[k] + "-"            
+#          for k in range(len(seqs)):
+#            if i ==k:
+#               continue
+#            try:
+#                cluster_member = [x for x in cluster if x.split("-")[0].replace("s", "") == str(k)]
+#                #print(cluster_member)
+#                alignment[k]= alignment[k] + cluster_member[0].split("-")[2]
+#            except Exception as E:
+#               alignment[k] = alignment[k] + "-"
+#            
+#
+#    for i in range(len(alignment)):
+#      print(i, alignment[i])
 
+
+    # Go through each position in the sequence. 
+    # See if it's already in a guide post
+    # If not, find previous and next guidepost within seqeucne
+    # Get those guideposts from query sequences. 
+    #     
+
+
+    # Pull region between two clusters 
+    #1, 5
+    # Get index of first one,
+    #[x for x in seq if 
+    # Get index of second one  
+  
+    #return 0       
+ 

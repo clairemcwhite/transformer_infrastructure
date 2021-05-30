@@ -277,7 +277,6 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     #print("end new sort")
     #print(D1)
     #print(D2)
-    return(0)
     #print(np.array(D1).shape)
     #print(np.array(D).shape)
 
@@ -302,7 +301,6 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     hitlist = get_rbhits(D, seqlens, seqs, masks)
     print("got rbh")
     #To do: Make matchstate object
-    return 0
     # Remove streak conflict matches
     filtered_hitlist = []
     for i in range(len(seqs)):
@@ -509,7 +507,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     alignment = [""] * numseqs
     header =  range(len(clusters_filt_dag))
     #alignment.append(header) 
-    for i in  [ 1] : #range(len(seqs)):
+    for i in  [ 0] : #range(len(seqs)):
        for j in range(len(seqs[i])):
           key = "s{}-{}-{}".format(i, j, seqs[i][j])
           alignment[i] = alignment[i] + seqs[i][j]
@@ -626,7 +624,7 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[0:100], seq_names[0:100])
+    get_similarity_network(layers, model_name, seqs[0:20], seq_names[0:20])
 
     # 
     #http://pfam.xfam.org/protein/A0A1I7UMU0

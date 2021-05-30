@@ -119,7 +119,7 @@ def kmeans_hidden_states(hidden_states, k):
     D = distance to centroid
     I = index of cluster
     '''
-    print(hidden_states)
+    #print(hidden_states)
     print(hidden_states.shape)
     d = hidden_states.shape[1]
     kmeans = faiss.Kmeans(d = d, k = k, niter = 10)
@@ -140,7 +140,9 @@ def get_hidden_states(seqs, model, tokenizer, layers):
 
     # Get all hidden states
     hidden_states = output.hidden_states
-    
+
+  
+   
     #BramVanroy  https://github.com/huggingface/transformers/issues/1328#issuecomment-534956703
     #Concatenate final for hidden states into long vector
     pooled_output = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
@@ -149,4 +151,4 @@ def get_hidden_states(seqs, model, tokenizer, layers):
     # 3 - CLS,seq,END
     return pooled_output
 
-
+#
