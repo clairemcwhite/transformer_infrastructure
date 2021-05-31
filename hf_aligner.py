@@ -532,7 +532,6 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
 
     for i in range(len(alignment)):
       print(i, alignment[i])
-    return 0
           
        
  

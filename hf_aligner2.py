@@ -246,6 +246,7 @@ def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
    print(D.shape)
    # For each amino acid...
    for i in range(len(I)):
+      print(i)
       # Make empty list of lists, one per sequence
       I_query =  [[] for i in range(numseqs)]
       D_query = [[] for i in range(numseqs)]
@@ -347,10 +348,15 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     print("end hidden states")
     #print(hstates_list)
     #print(hstates_list.shape)
+
+    # Drop X's from here
+    print(hstates_list.shape)
+    # Remove first and last X padding
+    hstates_list = hstates_list[:,5:-5,:]
     padded_seqlen = hstates_list.shape[1]
 
     # After encoding, remove spaces from sequences
-    seqs = [x.replace(" ", "") for x in seqs]
+    seqs = [x.replace(" ", "")[5:-5] for x in seqs]
     seqlens = [len(x) for x in seqs]
     numseqs = len(seqs)
     #for seq in seqs:
@@ -381,17 +387,19 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     index = build_index(hidden_states)
      
     print("search index")
-    D1, I1 =  index.search(hidden_states, k = numseqs*padded_seqlen) 
+    D1, I1 =  index.search(hidden_states, k = numseqs*2) 
 
     print("Split results into proteins") 
+    # Still annoyingly slow
     D2, I2 = split_distances_to_sequence(D1, I1, index_to_aa, numseqs, padded_seqlen) 
 
     print("get best hitlist")
     hitlist_top = get_besthits(D2, I2, index_to_aa, padded_seqlen)
  
-    print("get reciprocal best hits") 
     G_hitlist = igraph.Graph.TupleList(edges=hitlist_top, directed=True) 
 
+
+    print("Get reciprocal best hits")
     rbh_bool = G_hitlist.is_mutual()
     
     hitlist = []
@@ -402,23 +410,27 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
            hitlist.append([source_vertex, target_vertex])
 
     print("got reciprocal besthits")
-
-    # Remove streak conflict matches
-    filtered_hitlist = remove_streakbreakers(hitlist, seqs, seqlens, streakmin = 3)
-
-    #print(pd.DataFrame(filtered_hitlist))
-    with open("testnet.csv", "w") as outfile:
-      outfile.write("aa1,aa2,score\n")
-      # If do reverse first, don't have to do second resort
-      for x in filtered_hitlist:
-         outstring = "{},{}\n".format(x[0], x[1])        
-         #outstring = "s{}-{}-{},s{}-{}-{},{}\n".format(x[0], x[1], x[5], x[2], x[3], x[6], x[4])
-         outfile.write(outstring)
-
+  
+    remove_streaks = False  
+    if remove_streaks == True:
+        print("Remove streak conflict matches")
+        hitlist = remove_streakbreakers(hitlist, seqs, seqlens, streakmin = 3)
+    
+   
     ######################################### Do walktrap clustering
     # Why isn't this directed?
-    G = igraph.Graph.TupleList(edges=filtered_hitlist, directed=True)
+
+    with open("testnet.csv", "w") as outfile:
+          outfile.write("aa1,aa2,score\n")
+          # If do reverse first, don't have to do second resort
+          for x in hitlist:
+             outstring = "{},{}\n".format(x[0], x[1])        
+             #outstring = "s{}-{}-{},s{}-{}-{},{}\n".format(x[0], x[1], x[5], x[2], x[3], x[6], x[4])
+             outfile.write(outstring)
+ 
+    G = igraph.Graph.TupleList(edges=hitlist, directed=True)
     # Remove multiedges and self loops
+    print("Remove multiedges and self loops")
     G = G.simplify()
     
 
@@ -472,13 +484,14 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
 
     pos_to_cluster_dag, clustid_to_clust_dag = get_cluster_dict(clusters_filt_dag, seqs)
     cluster_orders_dag = get_cluster_orders(pos_to_cluster_dag, seqs)
-    print(cluster_orders_dag)
+    for x in cluster_orders_dag:
+           print(x)
 
     print("Get a single cluster order with minim")
     G_order = graph_from_cluster_orders(cluster_orders_dag)
     G_order = G_order.simplify()
-    # NOPE
-    cluster_order = [x['name'] for x in G_order.spanning_tree().vs]
+
+    print(G_order)
     #for x in G_order.vs:
     #   print("index", x.index, "name", x['name']) 
 
@@ -606,8 +619,10 @@ if __name__ == '__main__':
 
     #seq_names = ['seq1','seq2', 'seq3', 'seq4']
 
-    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
-    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
+    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
+    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/ung.vie'
+
     sequence_lols = parse_fasta(fasta, "test.fasta", False)
 
     df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence', 'sequence_spaced'])
@@ -627,8 +642,8 @@ if __name__ == '__main__':
     if local == True:
         newseqs = []
         for seq in seqs:
-             newseq = "X " + seq
-             newseq = newseq + " X"
+             newseq = "X X X X X" + seq  # WHY does this help embedding to not have a space?
+             newseq = newseq + " X X X X X"
              newseqs.append(newseq)
         seqs = newseqs
 
@@ -656,7 +671,7 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[0:20], seq_names[0:20])
+    get_similarity_network(layers, model_name, seqs[0:50], seq_names[0:50])
 
     # 
     #http://pfam.xfam.org/protein/A0A1I7UMU0
