@@ -246,7 +246,7 @@ def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
    print(D.shape)
    # For each amino acid...
    for i in range(len(I)):
-      print(i)
+      #print(i)
       # Make empty list of lists, one per sequence
       I_query =  [[] for i in range(numseqs)]
       D_query = [[] for i in range(numseqs)]
@@ -269,12 +269,12 @@ def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
 
 
 def get_besthits(D, I, index_to_aa, padded_seqlen):
-   aa_to_index = {value: key for key, value in index_to_aa.items()}
+
+   #aa_to_index = {value: key for key, value in index_to_aa.items()}
 
    hitlist = []
    for query_seq in range(len(D)):
      
-
       for query_aa in range(len(D[query_seq])):
            # Non-sequence padding isn't in dictionary
            try:
@@ -294,6 +294,21 @@ def get_besthits(D, I, index_to_aa, padded_seqlen):
                hitlist.append([query_id, bestmatch_id, bestscore])
 
    return(hitlist) 
+
+
+def get_rbhs(hitlist_top):
+    G_hitlist = igraph.Graph.TupleList(edges=hitlist_top, directed=True) 
+
+
+    rbh_bool = G_hitlist.is_mutual()
+    
+    hitlist = []
+    for i in range(len(G_hitlist.es())):
+        if rbh_bool[i] == True:
+           source_vertex = G_hitlist.vs[G_hitlist.es()[i].source]["name"]
+           target_vertex = G_hitlist.vs[G_hitlist.es()[i].target]["name"]
+           hitlist.append([source_vertex, target_vertex])
+    return(hitlist)
 
 
 def get_cluster_dict(clusters, seqs):
@@ -350,7 +365,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     #print(hstates_list.shape)
 
     # Drop X's from here
-    print(hstates_list.shape)
+    #print(hstates_list.shape)
     # Remove first and last X padding
     hstates_list = hstates_list[:,5:-5,:]
     padded_seqlen = hstates_list.shape[1]
@@ -387,7 +402,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     index = build_index(hidden_states)
      
     print("search index")
-    D1, I1 =  index.search(hidden_states, k = numseqs*2) 
+    D1, I1 =  index.search(hidden_states, k = numseqs*3) 
 
     print("Split results into proteins") 
     # Still annoyingly slow
@@ -395,19 +410,9 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
 
     print("get best hitlist")
     hitlist_top = get_besthits(D2, I2, index_to_aa, padded_seqlen)
- 
-    G_hitlist = igraph.Graph.TupleList(edges=hitlist_top, directed=True) 
-
 
     print("Get reciprocal best hits")
-    rbh_bool = G_hitlist.is_mutual()
-    
-    hitlist = []
-    for i in range(len(G_hitlist.es())):
-        if rbh_bool[i] == True:
-           source_vertex = G_hitlist.vs[G_hitlist.es()[i].source]["name"]
-           target_vertex = G_hitlist.vs[G_hitlist.es()[i].target]["name"]
-           hitlist.append([source_vertex, target_vertex])
+    hitlist = get_rbhs(hitlist_top) 
 
     print("got reciprocal besthits")
   
@@ -491,7 +496,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     G_order = graph_from_cluster_orders(cluster_orders_dag)
     G_order = G_order.simplify()
 
-    print(G_order)
+    #print(G_order)
     #for x in G_order.vs:
     #   print("index", x.index, "name", x['name']) 
 
@@ -500,12 +505,12 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     cluster_order = []
     for i in topo_sort_indices:
        cluster_order.append(G_order.vs[i]['name'])
-    print(cluster_order)
+    ##print(cluster_order)
 
  
     print("For each sequence check that the cluster order doesn't conflict with aa order")
 
-    print(pos_to_cluster_dag)    
+    #print(pos_to_cluster_dag)    
     clusters_w_order_conflict= []
     for i in range(numseqs): 
         prev_cluster = 0
@@ -517,16 +522,16 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
                continue
 
            order_index = cluster_order.index(clust)
-           print(key, clust, order_index)
+           #print(key, clust, order_index)
            if order_index < prev_cluster:
                 clusters_w_order_conflict.append(clust)
                 print("order_violation", order_index, clust)
            prev_cluster  = order_index
-    print(cluster_order)
-    print(clusters_w_order_conflict)
+    #print(cluster_order)
+    #print(clusters_w_order_conflict)
     cluster_order = [x for x in cluster_order if x not in clusters_w_order_conflict]
 
-    print(cluster_order)
+    #print(cluster_order)
     clustid_to_clust_dag = {key:val for key, val in clustid_to_clust_dag.items() if key  in cluster_order}
 
     
@@ -578,8 +583,164 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
                      last_unsorted = k
               unassigned.append([prevclust, unsorted, nextclust])
   
+    for x in unassigned:
+          print(x)
+   
+    # To little sets of hstates
+    #for todo in unassigned:
+    
+    # Get sequence between two clusters
+    # If cluster not found, get previous cluster and try again
+    #cluster_order        
+    #clustid_to_clust
+    
+    # Get list of lists of start and end to extract from embeddings list
+
+    # Use dictionary for get_seqnum? or just object
+
+    seqs_aas = []
+    for i in range(len(seqs)):
+        seq_aas = []
+        for j in range(len(seqs[i])):
+           seq_aas.append("s{}-{}-{}".format(i, j, seqs[i][j]))
+        seqs_aas.append(seq_aas)
 
 
+    range_list = [[0, padded_seqlen] for i in range(numseqs)] 
+
+    #for each sequence, try for cluster 22, otherwise, look earlier
+    print(cluster_order)    
+    incomplete_seq = 13
+    starting_clustid = 4
+    ending_clustid = 6
+    
+    # range_list is the surrounding guideposts for unassigned
+    for i in range(len(seqs)):
+        pos_start = []
+        pos_end = []
+        for clustid in cluster_order[0:cluster_order.index(starting_clustid) + 2][::-1]:
+            prev_clust = clustid_to_clust[clustid]
+            pos_start = [get_seqpos(x) for x in prev_clust if get_seqnum(x) == i]
+            if pos_start:
+                range_list[i][0] = pos_start[0]
+                break
+        for clustid in cluster_order[cluster_order.index(ending_clustid):]:
+            next_clust = clustid_to_clust[clustid]
+            pos_end = [get_seqpos(x) for x in next_clust if get_seqnum(x) == i]
+            if pos_end:
+                range_list[i][1] = pos_end[0]
+                break
+    # Don't include "previous cluster" from current seq             
+    range_list[incomplete_seq][0] = range_list[incomplete_seq][0] + 1
+
+
+
+    print(range_list)
+    print("x")
+    target_seqs_list = []
+    for i in range(len(seqs_aas)):
+        print(seqs_aas[i][range_list[i][0]:range_list[i][1]])
+        target_seqs_list.append(seqs_aas[i][range_list[i][0]:range_list[i][1]])
+    target_seqs = list(flatten(target_seqs_list))
+    
+
+    # For each of the unassigned seqs, get their top hits from the previously computed distances/indices
+ 
+    new_hitlist = []
+    print(unassigned)
+    
+    #new_I2 = []
+    #new_D2 = []
+    print(range_list[13])
+    print("target_seqs", target_seqs)
+    # ex. unassigned range = 4- 6, 3 aa
+    current_unassigned = unassigned[4][1] # ['s13-3-N', 's13-4-W', 's13-5-V']
+    print(current_unassigned)
+    count = 0
+
+    new_hitlist = []
+    # First get scores from unnassigned seqs to targets
+
+    for i in range(range_list[13][0], range_list[13][1]):       
+        current_seqid  = current_unassigned[count]
+        count = count + 1
+        ind = I2[13][i]  
+        dist =  D2[13][i] 
+        ind_seq = []
+        ind_dist = []
+        for j in range(len(ind)):
+            for k in range(len(ind[j])):
+                if ind[j][k] in target_seqs:
+                   new_hitlist.append([current_seqid, ind[j][k], dist[j][k]])
+    for x in new_hitlist:
+         print(x)
+
+    new_hitlist = []
+    print(target_seqs_list)
+
+    for x in range(len(range_list)):
+        count = 0
+        for i in range(range_list[x][0], range_list[x][1]):       
+            query_id  = target_seqs_list[x][count]
+            count = count + 1
+            ind = I2[x][i]  
+            dist =  D2[x][i] 
+            for j in range(len(ind)):
+               ids = ind[j]
+               scores = dist[j]
+               bestscore = scores[0]
+               bestmatch_id = ids[0]
+               if bestscore >= 0.5:
+                   new_hitlist.append([query_id, bestmatch_id, bestscore])
+
+    print("other way")        
+    for x in new_hitlist:
+         print(x)
+
+    new_rbh = get_rbhs(new_hitlist)
+    for x in new_rbh: 
+       print(x)
+
+    #for x in new_hitlist:
+    #    print(x)
+                   #ind_seq.append(ind[j][k])
+                   #ind_dist.append(dist[j][k])
+        #print("selected", ind_seq)
+        #print("selected", ind_dist)
+      
+                       
+            #good_indices = [x for x in range(len(seqmatch)) if ind[x] in target_seqs]
+        #ind2 = [ind[j] for j in good_indices]
+        #dist2 = [dist[j] for j in good_indices]
+        #print("selected_indices", ind2)
+        #print(dist2)
+  
+        #new_I2.append(ind2)
+        #new_D2.append(dist)
+    #print(new_I2) 
+    #print(new_D2)
+            #new_prevclust = clustid_to_clust[cluster_order[cluster_order.index(22) - 1]]
+            #pos = [x for x in new_prev_clust if get_seqnum(x) == i] 
+            
+
+    return(0)
+    prev_clust = clustid_to_clust[22]
+    print(prev_clust)    
+
+
+    for aa in prev_clust:
+        seqnum = get_seqnum(aa)
+        range_list[seqnum][0] = get_seqpos(aa)
+    
+
+
+    print(range_list)        
+
+
+
+
+
+  
 
 
 
@@ -619,8 +780,8 @@ if __name__ == '__main__':
 
     #seq_names = ['seq1','seq2', 'seq3', 'seq4']
 
-    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
-    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
+    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
     #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/ung.vie'
 
     sequence_lols = parse_fasta(fasta, "test.fasta", False)
@@ -671,12 +832,12 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[0:50], seq_names[0:50])
+    get_similarity_network(layers, model_name, seqs[0:20], seq_names[0:20])
 
     # 
     #http://pfam.xfam.org/protein/A0A1I7UMU0
 
-    for x in range(len(seqs[0:10])):
+    for x in range(len(seqs[0:20])):
        
            print(seqs[x])
 
