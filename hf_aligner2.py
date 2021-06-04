@@ -45,7 +45,46 @@ def graph_from_cluster_orders(cluster_orders):
     G_order = igraph.Graph.TupleList(edges=order_edges, directed=True)
     return(G_order)
 
+def get_topological_sort(cluster_orders):
 
+    G_order = graph_from_cluster_orders(cluster_orders)
+    G_order = G_order.simplify()
+
+    topo_sort_indices = G_order.topological_sorting()
+    cluster_order = []
+
+    # Note: this is in vertex indices. Need to convert to name to get clustid
+    for i in topo_sort_indices:
+       cluster_order.append(G_order.vs[i]['name'])
+    return(cluster_order) #, clustid_to_clust_dag)
+    
+def remove_order_conflicts(cluster_order, seqs,numseqs, pos_to_cluster_dag):
+    """ 
+    After topological sort,
+    remove any clusters that conflict with sequence order 
+    """
+    #print(pos_to_cluster_dag)    
+    clusters_w_order_conflict= []
+    for i in range(numseqs): 
+        prev_cluster = 0
+        for j in range(len(seqs[i])):
+           key = "s{}-{}-{}".format(i, j, seqs[i][j])
+           try:
+               clust = pos_to_cluster_dag[key]
+           except Exception as E:
+               continue
+
+           order_index = cluster_order.index(clust)
+           #print(key, clust, order_index)
+           if order_index < prev_cluster:
+                clusters_w_order_conflict.append(clust)
+                print("order_violation", order_index, clust)
+           prev_cluster  = order_index
+    #print(cluster_order)
+    #print(clusters_w_order_conflict)
+    cluster_order = [x for x in cluster_order if x not in clusters_w_order_conflict]
+    return(cluster_order)
+ 
 def make_alignment(cluster_order, numseqs, clustid_to_clust):
     # Set up a bunch of vectors of "-"
     # Replace with matches
@@ -192,7 +231,7 @@ def range_to_seq(range_list, numseqs, seqs_aas, gap_seqnum, gap_seqaas):
 
 
  
-def remove_feedback_edges(cluster_orders, clusters_filt):
+def remove_feedback_edges(cluster_orders, clusters_filt, count = 0):
 
 
     G_order = graph_from_cluster_orders(cluster_orders)
@@ -246,7 +285,17 @@ def remove_feedback_edges(cluster_orders, clusters_filt):
             else:
                clust.append(seq)
          clusters_filt_dag.append(clust)
- 
+
+    # Recursive potential
+    count = count + 1
+    if not graph_from_cluster_orders(cluster_orders_dag).is_dag():
+        print("not yet acyclic, removing more feedback loops, iteration: ", count)
+        remove_feedback_edges(cluster_orders_dag, clusters_filt_dag, count) 
+        if count > 5:
+         
+           print("max recursion in trimming to directed acyclic graph reached")
+           return(clusters_filt_dag)
+
     return(clusters_filt_dag)
 
 def remove_streakbreakers(hitlist, seqs, seqlens, streakmin = 3):
@@ -502,6 +551,45 @@ def get_cluster_orders(cluster_dict, seqs):
     return(cluster_orders)
 
 
+def clusters_to_cluster_order(clusters_filt, seqs):
+    ######################################3
+    # Remove feedback loops in paths through clusters
+    # For getting consensus cluster order
+
+    numseqs = len(seqs)
+    pos_to_clustid, clustid_to_clust= get_cluster_dict(clusters_filt, seqs)
+    cluster_orders = get_cluster_orders(pos_to_clustid, seqs)
+
+    print("Find directed acyclic graph")   
+    clusters_filt_dag = remove_feedback_edges(cluster_orders, clusters_filt)
+
+    print("Directed acyclic graph found")
+    # unnecessary? Make optional 
+    # Could cause errors for a short sequence
+    # 
+    #print("Removed poorly matching seqs after DAG-ification")
+    #clusters_filt_dag = remove_low_match_prots(numseqs, seqlens, clusters_filt_dag, threshold_min = 0.5) 
+
+    print("Get cluster order after dag")
+    pos_to_cluster_dag, clustid_to_clust_dag = get_cluster_dict(clusters_filt_dag, seqs)
+
+
+    cluster_orders_dag = get_cluster_orders(pos_to_cluster_dag, seqs)
+
+    print("Get a single cluster order with topological sort")
+
+    cluster_order = get_topological_sort(cluster_orders_dag) 
+ 
+    print("For each sequence check that the cluster order doesn't conflict with aa order")
+    cluster_order = remove_order_conflicts(cluster_order, seqs,numseqs, pos_to_cluster_dag)
+
+    clustid_to_clust_topo = {key:val for key, val in clustid_to_clust_dag.items() if key  in cluster_order}
+
+    return(cluster_order, clustid_to_clust_topo, pos_to_cluster_dag)
+
+
+
+
 def get_similarity_network(layers, model_name, seqs, seq_names):
     # Use last four layers by default
     #layers = [-4, -3, -2, -1] if layers is None else layers
@@ -605,81 +693,14 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
 
     
 
-    ##############################
-    # No doubles check
-    # If a cluster has two entries from same seq, remove thos
-    # If a cluster has fewer then 3 members, remove them
-
-    #clusters_filt = remove_doubles(clusters_list, numseqs, 3)
-
     clusters_filt = [remove_doubles(x, numseqs, 3) for x in clusters_list]
-    clusters_filt = remove_low_match_prots(numseqs, seqlens, clusters_filt, threshold_min = 0.5) 
+    clusters_filt = remove_low_match_prots(numseqs, seqlens, clusters_filt, threshold_min = 0.1) 
     print("Remove poorly matching seqs after initial RBH seach")
 
-    ######################################3
-    # Remove feedback loops in paths through clusters
-    # Dictionary posname:clusternum 
-    # For getting consensus cluster order
-    pos_to_clustid, clustid_to_clust= get_cluster_dict(clusters_filt, seqs)
-    cluster_orders = get_cluster_orders(pos_to_clustid, seqs)
-
-    print("Find directed acyclic graph")   
-    clusters_filt_dag = remove_feedback_edges(cluster_orders, clusters_filt)
- 
-    print("Removed poorly matching seqs after DAG-ification")
-    clusters_filt_dag = remove_low_match_prots(numseqs, seqlens, clusters_filt_dag, threshold_min = 0.5) 
-
-    print("Get cluster order after dag")
-
-    pos_to_cluster_dag, clustid_to_clust_dag = get_cluster_dict(clusters_filt_dag, seqs)
-    cluster_orders_dag = get_cluster_orders(pos_to_cluster_dag, seqs)
-    for x in cluster_orders_dag:
-           print(x)
-
-    print("Get a single cluster order with minim")
-    G_order = graph_from_cluster_orders(cluster_orders_dag)
-    G_order = G_order.simplify()
-
-    #print(G_order)
-    #for x in G_order.vs:
-    #   print("index", x.index, "name", x['name']) 
-
-    # Note: this is in vertex indices. Need to convert to name to get clustid
-    topo_sort_indices = G_order.topological_sorting()
-    cluster_order = []
-    for i in topo_sort_indices:
-       cluster_order.append(G_order.vs[i]['name'])
-    ##print(cluster_order)
-
- 
-    print("For each sequence check that the cluster order doesn't conflict with aa order")
-
-    #print(pos_to_cluster_dag)    
-    clusters_w_order_conflict= []
-    for i in range(numseqs): 
-        prev_cluster = 0
-        for j in range(len(seqs[i])):
-           key = "s{}-{}-{}".format(i, j, seqs[i][j])
-           try:
-               clust = pos_to_cluster_dag[key]
-           except Exception as E:
-               continue
-
-           order_index = cluster_order.index(clust)
-           #print(key, clust, order_index)
-           if order_index < prev_cluster:
-                clusters_w_order_conflict.append(clust)
-                print("order_violation", order_index, clust)
-           prev_cluster  = order_index
-    #print(cluster_order)
-    #print(clusters_w_order_conflict)
-    cluster_order = [x for x in cluster_order if x not in clusters_w_order_conflict]
-
-    #print(cluster_order)
-    clustid_to_clust_dag = {key:val for key, val in clustid_to_clust_dag.items() if key  in cluster_order}
+    cluster_order, clustid_to_clust_topo, pos_to_cluster_dag =  clusters_to_cluster_order(clusters_filt, seqs)
 
     
-    make_alignment(cluster_order, numseqs, clustid_to_clust_dag)
+    make_alignment(cluster_order, numseqs, clustid_to_clust_topo)
    
 
     # Write sequences with aa ids
@@ -716,7 +737,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
         gap_seqnum = gap[3]
         gap_seqaas = gap[1]
 
-        range_list = get_ranges(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to_clust)
+        range_list = get_ranges(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to_clust_topo)
          
 
         target_seqs_list = range_to_seq(range_list, numseqs, seqs_aas, gap_seqnum, gap_seqaas)
@@ -726,23 +747,15 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
         #for x in range_list:
         #    print(x)
 
-        for x in target_seqs_list:
-            if x:
-              print(x)
+        #for x in target_seqs_list:
+        #    if x:
+        #      print(x)
 
-        print(target_seqs)
+        #print(target_seqs)
     
-        # For each of the unassigned seqs, get their top hits from the previously computed distances/indices
+        print("For each of the unassigned seqs, get their top hits from the previously computed distances/indices")
  
         new_hitlist = []
-        #print(range_list[1])
-        #print("target_seqs", target_seqs)
-        #for x in unassigned:
-        #   print(x)
-        # ex. unassigned range = 4- 6, 3 aa
-        #current_unassigned = unassigned[4][1] # ['s13-3-N', 's13-4-W', 's13-5-V']
-        #print(current_unassigned)
-        #count = 0
     
         for seq in target_seqs_list:
            for query_id in seq:
@@ -769,12 +782,10 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
         print("other way")        
         #for x in new_hitlist:
         #     print(x)
-        #Maybe calculate distance for each unassigned to each other cluster
-        #print("get rbh")
         new_rbh = get_rbhs(new_hitlist)
-        for x in new_rbh: 
-           print(x)
-        print("walktrap refined")    
+        #for x in new_rbh: 
+        #   print(x)
+        #print("walktrap refined")    
 
         if new_rbh:        
            new_walktrap = get_walktrap(new_rbh)
@@ -792,14 +803,14 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
                                 if rbh[1] in cluster:
                                      rbh_select.append(rbh)
                          
-                          print(rbh_select)
+                          #print(rbh_select)
                           G = igraph.Graph.TupleList(edges=rbh_select, directed = False)
                           G = G.simplify() 
                           gap_degrees = []
                           gap_scores = []
                           for gap in gap_seqaas: 
                               if gap in cluster:
-                                print(G.degree(gap))
+                                #print(G.degree(gap))
                                 gap_degrees.append(G.degree(gap))
                                 # Get rbh to return scores
                                 # get highest score if degree tie
@@ -833,43 +844,10 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
          print(x)
 
 
-    #for x in new_hitlist:
-    #    print(x)
-                   #ind_seq.append(ind[j][k])
-                   #ind_dist.append(dist[j][k])
-        #print("selected", ind_seq)
-        #print("selected", ind_dist)
-      
-                       
-            #good_indices = [x for x in range(len(seqmatch)) if ind[x] in target_seqs]
-        #ind2 = [ind[j] for j in good_indices]
-        #dist2 = [dist[j] for j in good_indices]
-        #print("selected_indices", ind2)
-        #print(dist2)
-  
-        #new_I2.append(ind2)
-        #new_D2.append(dist)
-    #print(new_I2) 
-    #print(new_D2)
-            #new_prevclust = clustid_to_clust[cluster_order[cluster_order.index(22) - 1]]
-            #pos = [x for x in new_prev_clust if get_seqnum(x) == i] 
-            
+    #cluster_order, starting_clustid, ending_clustid, clustid_to_clust_topo)
+
 
     return(0)
-    prev_clust = clustid_to_clust[22]
-    print(prev_clust)    
-
-
-    for aa in prev_clust:
-        seqnum = get_seqnum(aa)
-        range_list[seqnum][0] = get_seqpos(aa)
-    
-
-
-    print(range_list)        
-
-
-
 
 
   
@@ -878,24 +856,6 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
 
 
 
-
-
-
-#
-#              if j == 0:
-#                  nextclusts = cluster_orders_dag[i:]
-#              
-#              else:
-#                  prevclust_index =  cluster_orders_dag[i].index(prevclust) 
-#                  if prevclust_index == len(cluster_orders_dag[i]) - 1:
-#                  #    nextclusts = "[]"
-#                  else:
-#                      nextclusts = cluster_orders_dag[i][prevclust_index + 1 : ]
-#              print(prevclusts, key, nextclusts)
-#
-#
-
-#
 
 
  
