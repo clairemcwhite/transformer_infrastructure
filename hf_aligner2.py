@@ -456,9 +456,7 @@ def get_walktrap(hitlist):
     # Remove multiedges and self loops
     print("Remove multiedges and self loops")
     G = G.simplify()
-   
     
- 
     print("start walktrap")
     walktrap = G.community_walktrap(steps = 1).as_clustering()
     print("walktrap1")
@@ -784,12 +782,44 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
                 if cluster not in new_clusters:
                      cluster_filt = remove_doubles(cluster, numseqs, 0)
                      if cluster_filt == cluster:
+                          # Best case, guidepost limit resolves clustering
                           new_clusters.append(cluster_filt)
                      else:        
                           print("try alternate clustering") 
+                          rbh_select = []
+                          for rbh in new_rbh:
+                              if rbh[0] in cluster:
+                                if rbh[1] in cluster:
+                                     rbh_select.append(rbh)
+                         
+                          print(rbh_select)
+                          G = igraph.Graph.TupleList(edges=rbh_select, directed = False)
+                          G = G.simplify() 
+                          gap_degrees = []
+                          gap_scores = []
+                          for gap in gap_seqaas: 
+                              if gap in cluster:
+                                print(G.degree(gap))
+                                gap_degrees.append(G.degree(gap))
+                                # Get rbh to return scores
+                                # get highest score if degree tie
+                                #gap_scores.append(G.:w
 
-        clustered_aas = list(flatten(new_walktrap))
-        print(clustered_aas)
+                          print(gap_degrees)
+                          highest_degree = gap_seqaas[np.argmax(gap_degrees)]
+                          to_remove = [x for x in gap_seqaas if x != highest_degree]
+                          cluster_filt = [x for x in cluster if x not in to_remove]
+                          new_clusters.append(cluster_filt) 
+
+
+                          # Walktrap fails if both aa's are clique-y to the larger cluster
+                          # Get the degree of each unassigned seq
+                          # Take the one with max degree
+                          # Leave others unmatched
+
+                          #print("alt walk", get_clustering(rbh_select))
+
+        clustered_aas = list(flatten(cluster_filt))
 
         unmatched = [x for x in gap_seqaas if not x in clustered_aas]     
         print("unmatched", unmatched)
