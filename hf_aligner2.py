@@ -500,6 +500,21 @@ def get_rbhs(hitlist_top):
     return(hitlist)
 
 
+def clustering_to_clusterlist(G, clustering):
+    """
+    Go from an igraph clustering to a list of clusters [[a,b,c], [d,e]]
+    """
+    cluster_ids = clustering.membership
+    vertices = G.vs()["name"]
+    clusters = list(zip(cluster_ids, vertices))
+
+    clusters_list = []
+    for i in range(len(clustering)):
+         clusters_list.append([vertices[x] for x in clustering[i]])
+
+
+    return(clusters_list)
+
 def get_walktrap(hitlist):
     G = igraph.Graph.TupleList(edges=hitlist, directed=True)
     # Remove multiedges and self loops
@@ -507,17 +522,11 @@ def get_walktrap(hitlist):
     G = G.simplify()
     
     print("start walktrap")
-    walktrap = G.community_walktrap(steps = 1).as_clustering()
-    print("walktrap1")
+    clustering = G.community_walktrap(steps = 1).as_clustering()
+    print("walktrap done")
 
-    cluster_ids = walktrap.membership
-    vertices = G.vs()["name"]
-    clusters = list(zip(cluster_ids, vertices))
 
-    clusters_list = []
-    for i in range(len(walktrap)):
-         clusters_list.append([vertices[x] for x in walktrap[i]])
-
+    clusters_list = clustering_to_clusterlist(G, clustering)
     return(clusters_list)
 
 
@@ -722,8 +731,8 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
     unassigned = get_unassigned_aas(seqs, pos_to_cluster_dag)
 
 
-    for x in unassigned:
-          print(x)
+    #for x in unassigned:
+    #      print(x)
     
     # Get sequence between two clusters
     
@@ -779,13 +788,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
                            if bestscore >= 0.5:
                               new_hitlist.append([query_id, bestmatch_id, bestscore])#, pos_to_cluster_dag[bestmatch_id]])
   
-        print("other way")        
-        #for x in new_hitlist:
-        #     print(x)
         new_rbh = get_rbhs(new_hitlist)
-        #for x in new_rbh: 
-        #   print(x)
-        #print("walktrap refined")    
 
         if new_rbh:        
            new_walktrap = get_walktrap(new_rbh)
@@ -802,8 +805,19 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
                               if rbh[0] in cluster:
                                 if rbh[1] in cluster:
                                      rbh_select.append(rbh)
+                          # This would work too, check later if it's faster
+                          #clust_count = {}
+                          # Start dictionary for counts of rbh to cluster
+                          #for t in  gap_seqaas:
+                          #     clust_count[t] = 0
+                          #for rbh in rbh_select:
+                          #     if rbh[0] in gap_seqaas:
+                          #          clust_count[rbh[0]] += 1
+                          #     if rbh[1] in gap_seqaas:
+                          #          clust_count[rbh[1]] += 1
+                          #print("cluster_counts", clust_count)
+                          #print(max(clust_count, key=clust_count.get)) 
                          
-                          #print(rbh_select)
                           G = igraph.Graph.TupleList(edges=rbh_select, directed = False)
                           G = G.simplify() 
                           gap_degrees = []
@@ -842,6 +856,58 @@ def get_similarity_network(layers, model_name, seqs, seq_names):
 
     for x in new_clusters:
          print(x)
+
+
+    # Merge clusters using graph
+    # If slow, try alternate https://stackoverflow.com/questions/9110837/python-simple-list-merging-based-on-intersections
+    all_clusters = new_clusters + clusters_filt
+    print(all_clusters)
+    reduced_edgelist = []
+    
+    # Add edge from first component of each cluster to rest of components in cluster
+    # Simplifies clique determination
+    for cluster in all_clusters:
+       for i in range(0,len(cluster)):
+            reduced_edgelist.append([cluster[0],cluster[i]])
+
+    new_G = igraph.Graph.TupleList(edges=reduced_edgelist, directed=False)
+    #new_G = new_G.simplify()
+    merged_clustering = new_G.clusters(mode = "weak")
+    clusters_merged = clustering_to_clusterlist(new_G, merged_clustering)
+
+    for x in clusters_merged:
+      print(x)
+   
+    cluster_order_merge, clustid_to_clust_merge, pos_to_cluster_merge =  clusters_to_cluster_order(clusters_merged, seqs)
+
+
+    make_alignment(cluster_order_merge, numseqs, clustid_to_clust_merge)
+
+ 
+    #newer_clusters = []
+    #for x in new_clusters:
+    #   for y in clusters_filt:
+    #       # If there's an overlap
+    #       if set(x).intersection(y):
+    ##           # Get union of old and new cluster
+    #           newer_clusters.append(list(set(x) | set(y)))
+    #           continue
+    #   newer_clusters.append(x) 
+    #newest_clusters = []
+
+    #for x in clusters_filt:
+       #for y in newer_clusters:
+          # # If there's an overlap
+           #if set(x).intersection(y):
+           #    # Get union of old and new cluster
+           #    newest_clusters.append(list(set(x) | set(y)))
+          #i    continue
+      # newest_clusters.append(x) 
+
+
+
+
+    #print("Remove poorly matching seqs after initial RBH seach")
 
 
     #cluster_order, starting_clustid, ending_clustid, clustid_to_clust_topo)
