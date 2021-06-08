@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-from transformer_infrastructure.hf_classification import *
+# This is causing circular import error
+#from transformer_infrastructure.hf_classification import *
  
 from transformers import AutoConfig
 

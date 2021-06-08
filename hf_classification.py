@@ -2,7 +2,7 @@
 
 from transformer_infrastructure.hf_evaluation import get_predictions
 import torch
-from transformers import AutoTokenizer, Trainer, TrainingArguments, AutoModelForSequenceClassification, BertTokenizerFast, EvalPrediction
+from transformers import AutoTokenizer, Trainer, TrainingArguments, AutoModelForSequenceClassification, BertTokenizerFast, EvalPrediction, AutoConfig
 from torch.utils.data import Dataset
 import os
 import pandas as pd
@@ -94,11 +94,19 @@ def compute_metrics(pred):
     }
 
 def model_init():
-  return AutoModelForSequenceClassification.from_pretrained(model_name,
-                                                         num_labels=len(unique_tags),
-                                                         id2label=id2tag,
-                                                         label2id=tag2id,
-                                                         gradient_checkpointing=False)
+
+  # from_config (vs. from_pretrained) is necessary for multiclass 
+  config = AutoConfig.from_pretrained(model_name)
+  config.num_labels = len(unique_tags)
+  config.id2label = id2tag
+  config.label2id = tag2id
+  config.gradient_checkpointing = False
+  return AutoModelForSequenceClassification.from_config(config)
+  #return AutoModelForSequenceClassification.from_pretrained(model_name,
+                                                       #  num_labels=len(unique_tags),
+                                                       #  id2label=id2tag,
+                                                       #  label2id=tag2id,
+                                                       #  gradient_checkpointing=False)
 
 
 def setup_trainer(epochs, train_batchsize, val_batchsize, outdir, expname):
@@ -118,8 +126,8 @@ def setup_trainer(epochs, train_batchsize, val_batchsize, outdir, expname):
         do_eval=True,                    # Perform evaluation
         evaluation_strategy="epoch",     # evalute after each epoch
         gradient_accumulation_steps=32,  # total number of steps before back propagation
-        fp16=True,                       # Use mixed precision
-        fp16_opt_level="02",             # mixed precision mode
+        #fp16=True,                       # Use mixed precision
+        #fp16_opt_level="02",             # mixed precision mode
         run_name=expname,      # experiment name
         seed=3,                         # Seed for experiment reproducibility
         load_best_model_at_end=True,
@@ -192,7 +200,8 @@ if __name__ == "__main__":
     tag2id = {tag: id for id, tag in enumerate(unique_tags)}
     id2tag = {id: tag for tag, id in tag2id.items()}
 
-
+    logging.info("unique_tags")
+    logging.info(unique_tags)
     logging.info("id2tag")
     logging.info(id2tag)
     logging.info("tag2id")
