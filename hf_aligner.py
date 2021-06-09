@@ -60,19 +60,19 @@ def get_topological_sort(cluster_orders):
        cluster_order.append(G_order.vs[i]['name'])
     return(cluster_order) #, clustid_to_clust_dag)
     
-def remove_order_conflicts(cluster_order, seqs,numseqs, pos_to_cluster_dag):
+def remove_order_conflicts(cluster_order, seqs,numseqs, pos_to_clustid_dag):
     """ 
     After topological sort,
     remove any clusters that conflict with sequence order 
     """
-    #print(pos_to_cluster_dag)    
+    #print(pos_to_clustid_dag)    
     clusters_w_order_conflict= []
     for i in range(numseqs): 
         prev_cluster = 0
         for j in range(len(seqs[i])):
            key = "s{}-{}-{}".format(i, j, seqs[i][j])
            try:
-               clust = pos_to_cluster_dag[key]
+               clust = pos_to_clustid_dag[key]
            except Exception as E:
                continue
 
@@ -116,7 +116,7 @@ def make_alignment(cluster_order, numseqs, clustid_to_clust):
     return(alignment_str)
 
 
-def get_unassigned_aas(seqs, pos_to_cluster_dag):
+def get_unassigned_aas(seqs, pos_to_clustid_dag):
     unassigned = []
     for i in range(len(seqs)):
         #if i == 3:
@@ -132,7 +132,7 @@ def get_unassigned_aas(seqs, pos_to_cluster_dag):
            key = "s{}-{}-{}".format(i, j, seqs[i][j])
            try:
               # Read to first cluster hit
-              clust = pos_to_cluster_dag[key]
+              clust = pos_to_clustid_dag[key]
               prevclust = clust
            # If it's not in a clust, it's unsorted
            except Exception as E:
@@ -141,7 +141,7 @@ def get_unassigned_aas(seqs, pos_to_cluster_dag):
               for k in range(j + 1, len(seqs[i])):
                   key = "s{}-{}-{}".format(i, k, seqs[i][k])
                   try:
-                     nextclust = pos_to_cluster_dag[key]
+                     nextclust = pos_to_clustid_dag[key]
                      #print(nextclust)
                      break
                   # Go until you hit next clust or end of seq
@@ -153,27 +153,28 @@ def get_unassigned_aas(seqs, pos_to_cluster_dag):
               prevclust = []
     return(unassigned)
 
-def address_unassigned(gap, seqs, seqs_aas, pos_to_cluster, cluster_order, clustid_to_clust, numseqs, I2, D2):
+def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2):
         new_clusters = []
         starting_clustid = gap[0]
         ending_clustid = gap[2] 
         gap_seqnum = gap[3]
         gap_seqaas = gap[1]
+#        range_list = get_ranges(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to_clust)
 
-        range_list = get_ranges(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to_clust)
+#        print("better print a range list")
+#        for x in range_list:
+#            print(x)
+#        print("end of range list")
 
-        print("better print a range list")
-        for x in range_list:
-            print(x)
-        print("end of range list")
+#        target_seqs_list = range_to_seq(range_list, numseqs, seqs_aas, gap_seqnum, gap_seqaas)
 
-        target_seqs_list = range_to_seq(range_list, numseqs, seqs_aas, gap_seqnum, gap_seqaas)
+        target_seqs_list = get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid)
+
 
         #for x in target_seqs_list:
         #     print(x)
 
         target_seqs = list(flatten(target_seqs_list))
-        return(0)
         #for x in range_list:
         #    print(x)
 
@@ -207,12 +208,12 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_cluster, cluster_order, clust
                             continue
                        if bestmatch_id in target_seqs:
                            if bestscore >= 0.1:
-                              new_hitlist.append([query_id, bestmatch_id, bestscore])#, pos_to_cluster_dag[bestmatch_id]])
+                              new_hitlist.append([query_id, bestmatch_id, bestscore])#, pos_to_clustid_dag[bestmatch_id]])
   
         new_rbh = get_rbhs(new_hitlist)
         #print("testing here")
-        for x in new_rbh:
-             print(x)
+        #for x in new_rbh:
+        #     print(x)
         if new_rbh:        
            new_walktrap = get_walktrap(new_rbh)
            for cluster in new_walktrap:
@@ -259,8 +260,45 @@ def merge_clusters(new_clusters, prior_clusters):
     clusters_merged = clustering_to_clusterlist(new_G, merged_clustering)
     return(clusters_merged)
 
+def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid):
+
+    print(cluster_order, starting_clustid, ending_clustid)
+
  
-def get_ranges(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to_clust):
+    # if not x evaluates to true if x is zero 
+    # If unassigned sequence goes to the end of the sequence
+    if not ending_clustid and ending_clustid != 0:
+       ending_clustid = np.inf    
+    # If unassigned sequence extends before the sequence
+    if not starting_clustid and starting_clustid != 0:
+       starting_clustid = -np.inf   
+ 
+    # cluster_order must be zero:n
+    # this setting up list wrong, fix 
+    pos_list = [[] for i in range(len(seqs))] 
+    #pos_list = [] * len(seqs)
+    print("pos_list", pos_list)
+    for i in range(len(seqs_aas)):
+            startfound = False
+            if starting_clustid == -np.inf:
+                 startfound = True 
+            for pos in seqs_aas[i]:
+                try: 
+                    pos_clust = pos_to_clustid[pos]
+                    if pos_clust >= ending_clustid:
+                         continue
+                    elif pos_clust > starting_clustid and pos_clust < ending_clustid:
+                        pos_list[i].append(pos)
+                        startfound = True
+                except Exception as E:
+                        if startfound == True:     
+                           pos_list[i].append(pos)
+            print(pos_list)
+
+    return(pos_list)
+
+
+def get_ranges3(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to_clust):
 
     #Correction factors for filling out ends of sequences 
     # There are more cases to test here
@@ -272,7 +310,154 @@ def get_ranges(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to
     print(starting_clustid)
     print(ending_clustid)
 
-    open_start = 1
+    open_start = 0
+    open_end = 0
+    lastmatch = False
+
+ 
+    # if not x evaluates to true if x is zero 
+    # If unassigned sequence goes to the end of the sequence
+    if not ending_clustid and ending_clustid != 0:
+       ending_clustid = cluster_order[-1]      
+       #open_end = 1
+    # If unassigned sequence extends before the sequence
+    if not starting_clustid and starting_clustid != 0:
+       starting_clustid = cluster_order[0]     
+#       #open_start = 0 
+#       open_end = 1
+
+    # If the unassigned stretch starts at end of matches
+    if starting_clustid == cluster_order[-1]:
+       lastmatch = True
+
+    
+
+    #print(starting_clustid, ending_clustid)
+ 
+    # cluster_order must be zero:n
+    pos_list = [[] for i in range(len(seqs))] 
+
+
+    # Open ended case
+    # Go from any cluster larger than starting until end
+    if not ending_clustid and ending_clustid != 0:
+         for i in range(len(seqs)):
+               startfound = False
+               for pos in seqs[i]:
+
+                    # starting clustid is last, append all after
+                    if starting_clustid == cluster_order[-1]:
+                         startfound = True
+                    try:
+                        if pos_to_clustid[pos] > starting_clustid:
+                           startfound = True
+                           pos_list[i].append(pos)
+                        
+                    except Exception as E:
+                        if startfound == True:     
+                           pos_list[i].append(pos)
+
+   # Go until find a cluster larger than end_clustid
+    if not starting_clustid:
+        for i in range(len(seqs)):
+            for pos in seqs[i]:
+                try:
+                    if pos_to_clustid[pos] >= ending_clustid:
+                         continue
+                    else:
+                       pos_list[i].append(pos)
+                except Exception as E:
+                       pos_list[i].append(pos)
+   # Find start and go until end
+    if starting_clustid and ending_clustid:
+       for i in range(len(seqs)):
+            startfound = False
+            for pos in seqs[i]:
+                try: 
+                    pos_clust = pos_to_clustid[pos]
+                    if pos_clust > ending_clustid:
+                         continue
+                    elif pos_clust > starting_clustid and pos_clust < ending_clustid:
+                        pos_list[i].append(pos)
+                        startfound = True
+                except Exception as E:
+                        if startfound == True:     
+                           pos_list[i].append(pos)
+
+     
+
+
+
+
+
+
+
+
+      
+
+    for i in range(len(seqs)):
+        #for pos in seq[i]:
+            
+
+        ##if i ==19: 
+        #    print(starting_clustid + open_start, ending_clustid + open_end)
+        
+
+        for clustid in range(cluster_order[starting_clustid], cluster_order[ending_clustid + open_end]):
+ 
+            print(clustid)
+            cluster = clustid_to_clust[clustid]
+            try:
+                pos = [get_seqpos(x) for x in cluster if get_seqnum(x) == i][0]
+            except Exception as E:
+                continue
+
+
+            #prev_clust = clustid_to_clust[clustid]
+            # Prepend any sequence before start
+            if clustid == cluster_order[0]:
+                #print(pos)
+                #If first clustered position is zero, don't add before
+                if pos == 0:
+                    continue
+                else:
+                    for p in range(0, pos):
+                         pos_list[i].append(p)
+                         #seq_list[i].append(seqs_aas[i][p])
+            if lastmatch == False:
+                pos_list[i].append(pos)
+            # Append any remaining sequence
+            if clustid == cluster_order[-1]:
+                  for p in range(pos + 1, len(seqs[i])): 
+                      pos_list[i].append(p)
+            
+    range_list = [] 
+    for x in pos_list:
+       #print(x)
+       if x: 
+          range_list.append([min(x), max(x)])
+       else:
+          range_list.append([])
+ 
+    #for x in range_list:
+    #     print(x)
+    return(range_list)
+
+
+ 
+def get_ranges2(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to_clust):
+
+    #Correction factors for filling out ends of sequences 
+    # There are more cases to test here
+    #print(cluster_order) 
+    #print(starting_clustid, ending_clustid)
+    #print(clustid_to_clust)
+    # Probably not full list of correction factors
+    print(cluster_order)
+    print(starting_clustid)
+    print(ending_clustid)
+
+    open_start = 0
     open_end = 0
     lastmatch = False
     # if not x evaluates to true if x is zero 
@@ -291,12 +476,19 @@ def get_ranges(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to
        open_start = 0
        lastmatch = True
 
+    
+
     #print(starting_clustid, ending_clustid)
  
     pos_list = [[] for i in range(len(seqs))] 
     for i in range(len(seqs)):
+        if i ==19: 
+            print(starting_clustid + open_start, ending_clustid + open_end)
+        
+
         for clustid_index in cluster_order[cluster_order.index(starting_clustid)  + open_start : cluster_order.index(ending_clustid) + open_end]:
-           
+            if i == 19:
+               print("clustid_index", clustid_index)           
             clustid = cluster_order[clustid_index]
             prev_clust = clustid_to_clust[clustid]
             try:
@@ -700,15 +892,15 @@ def get_walktrap(hitlist):
 
 def get_cluster_dict(clusters, seqs):
 
-    pos_to_cluster = {}
+    pos_to_clustid = {}
     clustid_to_clust = {}
     for i in range(len(clusters)):
        clust = clusters[i]
        clustid_to_clust[i] = clust 
        for seq in clust:
-              pos_to_cluster[seq] = i
+              pos_to_clustid[seq] = i
 
-    return(pos_to_cluster, clustid_to_clust)
+    return(pos_to_clustid, clustid_to_clust)
  
 def get_cluster_orders(cluster_dict, seqs):
     # This is getting path of each sequence through clusters 
@@ -913,7 +1105,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     clusters_filt = remove_low_match_prots(numseqs, seqlens, clusters_filt, threshold_min = 0.1) 
     print("Remove poorly matching seqs after initial RBH seach")
 
-    cluster_order, clustid_to_clust_topo, pos_to_cluster_dag =  clusters_to_cluster_order(clusters_filt, seqs)
+    cluster_order, clustid_to_clust_topo, pos_to_clustid_dag =  clusters_to_cluster_order(clusters_filt, seqs)
 
     print("Need to get new clusters_filt")
     clusters_filt = list(clustid_to_clust_topo.values())  
@@ -940,7 +1132,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
 
 
 
-    unassigned = get_unassigned_aas(seqs, pos_to_cluster_dag)
+    unassigned = get_unassigned_aas(seqs, pos_to_clustid_dag)
 
 
     for x in unassigned:
@@ -952,24 +1144,24 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     new_clusters = []
   
     for gap in unassigned:
-        new_clusters  = new_clusters + address_unassigned(gap, seqs, seqs_aas, pos_to_cluster_dag, cluster_order, clustid_to_clust_topo, numseqs, I2, D2)
+        new_clusters  = new_clusters + address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_dag, cluster_order, clustid_to_clust_topo, numseqs, I2, D2)
 
     clusters_merged = merge_clusters(new_clusters, clusters_filt)
 
 
     print("Get merged cluster order")
     # To do: more qc?
-    cluster_order_merge, clustid_to_clust_merge, pos_to_cluster_merge =  clusters_to_cluster_order(clusters_merged, seqs, remove_both = False)
+    cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge =  clusters_to_cluster_order(clusters_merged, seqs, remove_both = False)
 
 
     make_alignment(cluster_order_merge, numseqs, clustid_to_clust_merge)
 
-    still_unassigned = get_unassigned_aas(seqs, pos_to_cluster_merge)
+    still_unassigned = get_unassigned_aas(seqs, pos_to_clustid_merge)
  
     print(still_unassigned)  
     new_clusters_still = []
     for gap in still_unassigned:
-        new_clusters_still  = new_clusters_still + address_unassigned(gap, seqs, seqs_aas, pos_to_cluster_merge, cluster_order_merge, clustid_to_clust_merge, numseqs, I2, D2)
+        new_clusters_still  = new_clusters_still + address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_merge, cluster_order_merge, clustid_to_clust_merge, numseqs, I2, D2)
     print("this is a new cluster")
     for x in new_clusters_still:
         print(x)
@@ -983,7 +1175,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     clusters_merged2 = merge_clusters(new_clusters_still, clusters_merged)
     print("Get order")
 
-    cluster_order_merge2, clustid_to_clust_merge2, pos_to_cluster_merge2 =  clusters_to_cluster_order(clusters_merged2, seqs, remove_both = False)
+    cluster_order_merge2, clustid_to_clust_merge2, pos_to_clustid_merge2 =  clusters_to_cluster_order(clusters_merged2, seqs, remove_both = False)
     alignment = make_alignment(cluster_order_merge2, numseqs, clustid_to_clust_merge2)
 
     #newer_clusters = []
@@ -1084,7 +1276,7 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[20:40], seq_names[20:40], padding = 10)
+    get_similarity_network(layers, model_name, seqs[0:20], seq_names[0:20], padding = 10)
 
-    run_tests()
+    #run_tests()
     #unittest.main(buffer = True)
