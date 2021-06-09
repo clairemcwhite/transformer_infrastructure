@@ -1,5 +1,7 @@
 from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, build_index
+from transformer_infrastructure.run_tests import run_tests
 import faiss
+#import unittest
 fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 from sentence_transformers import util
 from iteration_utilities import  duplicates
@@ -102,9 +104,17 @@ def make_alignment(cluster_order, numseqs, clustid_to_clust):
                   alignment[seqnum][order] = get_seqaa(c_dict[seqnum])
                except Exception as E:
                    continue
-
+    alignment_str = ""
     for line in alignment:
-       print("".join(line))
+       row_str = "".join(line)
+       print(row_str)
+       alignment_str = alignment_str + row_str + "\n"
+    
+
+    
+
+    return(alignment_str)
+
 
 def get_unassigned_aas(seqs, pos_to_cluster_dag):
     unassigned = []
@@ -151,8 +161,11 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_cluster, cluster_order, clust
         gap_seqaas = gap[1]
 
         range_list = get_ranges(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to_clust)
-        #for x in range_list:
-        #    print(x)
+
+        print("better print a range list")
+        for x in range_list:
+            print(x)
+        print("end of range list")
 
         target_seqs_list = range_to_seq(range_list, numseqs, seqs_aas, gap_seqnum, gap_seqaas)
 
@@ -160,7 +173,7 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_cluster, cluster_order, clust
         #     print(x)
 
         target_seqs = list(flatten(target_seqs_list))
-
+        return(0)
         #for x in range_list:
         #    print(x)
 
@@ -193,13 +206,13 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_cluster, cluster_order, clust
                        if query_seqnum == get_seqnum(bestmatch_id):
                             continue
                        if bestmatch_id in target_seqs:
-                           if bestscore >= 0.5:
+                           if bestscore >= 0.1:
                               new_hitlist.append([query_id, bestmatch_id, bestscore])#, pos_to_cluster_dag[bestmatch_id]])
   
         new_rbh = get_rbhs(new_hitlist)
         #print("testing here")
-        #for x in new_rbh:
-        #     print(x)
+        for x in new_rbh:
+             print(x)
         if new_rbh:        
            new_walktrap = get_walktrap(new_rbh)
            for cluster in new_walktrap:
@@ -255,6 +268,10 @@ def get_ranges(seqs, cluster_order, starting_clustid, ending_clustid, clustid_to
     #print(starting_clustid, ending_clustid)
     #print(clustid_to_clust)
     # Probably not full list of correction factors
+    print(cluster_order)
+    print(starting_clustid)
+    print(ending_clustid)
+
     open_start = 1
     open_end = 0
     lastmatch = False
@@ -967,7 +984,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     print("Get order")
 
     cluster_order_merge2, clustid_to_clust_merge2, pos_to_cluster_merge2 =  clusters_to_cluster_order(clusters_merged2, seqs, remove_both = False)
-    make_alignment(cluster_order_merge2, numseqs, clustid_to_clust_merge2)
+    alignment = make_alignment(cluster_order_merge2, numseqs, clustid_to_clust_merge2)
 
     #newer_clusters = []
     #for x in new_clusters:
@@ -998,16 +1015,30 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     #cluster_order, starting_clustid, ending_clustid, clustid_to_clust_topo)
 
 
-    return(0)
+    return(alignment)
 
 
   
 
 
 
+def format_sequences(fasta, padding =  10):
+   
+    # What are the arguments to this? what is test.fasta? 
+    sequence_lols = parse_fasta(fasta, "test.fasta", False)
 
+    df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence', 'sequence_spaced'])
+    seq_names = df['id'].tolist()
+    seqs = df['sequence_spaced'].tolist() 
+    
+    newseqs = []
+    for seq in seqs:
+         newseq = "X X X X X X X X X X" + seq  # WHY does this help embedding to not have a space?
+         newseq = newseq + " X X X X X X X X X X"
+         newseqs.append(newseq)
+    newseqs = newseqs
 
-
+    return(newseqs, seq_names)
 
  
 if __name__ == '__main__':
@@ -1026,30 +1057,8 @@ if __name__ == '__main__':
     fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
     #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
     #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/ung.vie'
+    seqs, seq_names = format_sequences(fasta, padding = 10)
 
-    sequence_lols = parse_fasta(fasta, "test.fasta", False)
-
-    df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence', 'sequence_spaced'])
-    seq_names = df['id'].tolist()
-    seqs = df['sequence_spaced'].tolist() 
-    
-    testseqs = []
-    
-    for x in range(len(seqs)):
-        if x in [3, 39, 69, 94]:
-           print(seqs[x])
-        seqs[x] = seqs[x]
-    print("x")
-   
-    local = True
-   
-    if local == True:
-        newseqs = []
-        for seq in seqs:
-             newseq = "X X X X X X X X X X" + seq  # WHY does this help embedding to not have a space?
-             newseq = newseq + " X X X X X X X X X X"
-             newseqs.append(newseq)
-        seqs = newseqs
 
     # Maybe choose different set of embeddings
     # Avoid final layer?
@@ -1075,12 +1084,7 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[80:100], seq_names[80:100], padding = 10)
+    get_similarity_network(layers, model_name, seqs[20:40], seq_names[20:40], padding = 10)
 
-    # 
-    #http://pfam.xfam.org/protein/A0A1I7UMU0
-
-    for x in range(len(seqs[0:20])):
-       
-           print(seqs[x])
-
+    run_tests()
+    #unittest.main(buffer = True)
