@@ -36,6 +36,53 @@ def get_seqaa(pos):
     seqaa = pos.split("-")[2]
     return(seqaa)
 
+
+# This is in the goal of finding sequences that poorly match before aligning
+def graph_from_distindex(index, dist):  
+
+    edges = []
+    weights = []
+    for i in range(len(index)):
+       for j in range(len(index[i])):
+          edge = (i, index[i, j])
+          #if edge not in order_edges:
+          edges.append(edge)
+          weights.append(dist[i,j])
+
+    G = igraph.Graph.TupleList(edges=edges, directed=False)
+    G.es['weight'] = weights
+    return(G)
+
+# If removing a protein leads to less of a drop in total edgeweight that other proteins
+
+def candidate_to_remove(G, numseqs):
+
+    G_score = sum(G.es['weight'])
+    print(G_score)
+          
+
+    all_scores = []
+    for i in range(numseqs):
+        G_new = G.copy()
+        vs = G_new.vs.find(name = i)
+        G_new.delete_vertices(vs)
+        newsum = sum(G_new.es['weight'])
+        all_scores.append(newsum)
+
+    questionable_z = []
+    for i in range(len(all_scores)):
+        others = [all_scores[x] for x in range(len(all_scores)) if x != i]
+        z = (all_scores[i] - np.mean(others))/np.std(others)
+        print(i, z)
+        # 20 segs = 3, 40 seqs = 1.5i,   
+        #/40
+
+        if z > 3:
+            questionable_z.append(i)
+       
+    print(questionable_z) 
+    return(questionable_z)
+
 def graph_from_cluster_orders(cluster_orders):
     order_edges = []
     for order in cluster_orders:
@@ -51,6 +98,9 @@ def get_topological_sort(cluster_orders):
 
     G_order = graph_from_cluster_orders(cluster_orders)
     G_order = G_order.simplify()
+
+    dag_or_not = graph_from_cluster_orders(cluster_orders).is_dag()
+    print ("Dag or Not?, " dag_or_not)
 
     topo_sort_indices = G_order.topological_sorting()
     cluster_order = []
@@ -107,7 +157,7 @@ def make_alignment(cluster_order, numseqs, clustid_to_clust):
     alignment_str = ""
     for line in alignment:
        row_str = "".join(line)
-       print(row_str)
+       print(row_str[0:150])
        alignment_str = alignment_str + row_str + "\n"
         
 
@@ -210,31 +260,35 @@ def get_unassigned_aas(seqs, pos_to_clustid_dag):
               prevclust = []
     return(unassigned)
 
-def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2):
+def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2, to_exclude):
         new_clusters = []
         starting_clustid = gap[0]
         ending_clustid = gap[2] 
         gap_seqnum = gap[3]
         gap_seqaas = gap[1]
+        if gap_seqnum in to_exclude:
+              return([])
         target_seqs_list = get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid)
 
-
         target_seqs_list[gap_seqnum] = gap_seqaas
-        print("these are the target seqs")
-        for x in target_seqs_list:
-             print(x)
+        for x in to_exclude:
+            target_seqs_list[x] = []
+            
+
+        #print("these are the target seqs")
+        #for x in target_seqs_list:
+        #     print(x)
+
+       
+        #if gap_seqnum == 2:
+        #    print(gap_seqaas)
+        #    for x in target_seqs_list:
+        #             print(x)
+
 
         target_seqs = list(flatten(target_seqs_list))
-        #for x in range_list:
-        #    print(x)
-
-        #for x in target_seqs_list:
-        #    if x:
-        #      print(x)
-
-        #print(target_seqs)
     
-        print("For each of the unassigned seqs, get their top hits from the previously computed distances/indices")
+        #print("For each of the unassigned seqs, get their top hits from the previously computed distances/indices")
  
         new_hitlist = []
     
@@ -262,8 +316,9 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
   
         new_rbh = get_rbhs(new_hitlist)
         #print("testing here")
-        for x in new_rbh:
-             print(x)
+        #if "s2-2-Y" in gap_seqaas:
+        #    for x in new_rbh:
+        #         print(x)
         if new_rbh:        
            new_walktrap = get_walktrap(new_rbh)
            for cluster in new_walktrap:
@@ -272,8 +327,8 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
                      #cluster_filt = remove_doubles(cluster, numseqs, 0)
                      cluster_filt = remove_doubles2(cluster, new_rbh, numseqs, 0)
  
-                     print("before remove doubles2", cluster)
-                     print("after remove doubles2", cluster_filt)
+                     #print("before remove doubles2", cluster)
+                     #print("after remove doubles2", cluster_filt)
                           
                      new_clusters.append(cluster_filt)
                      # For final unresolved, use sort order info. 
@@ -281,7 +336,7 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
         clustered_aas = list(flatten(new_clusters))
 
         unmatched = [x for x in gap_seqaas if not x in clustered_aas]     
-        print("unmatched", unmatched)
+        #print("unmatched", unmatched)
           
            # If no reciprocal best hits, 
         for aa in unmatched: 
@@ -449,7 +504,6 @@ def remove_doubles2(cluster, rbh_list, numseqs, minclustsize):
     """
     Will need to resolve ties with scores
     """
-
     seqcounts = [0] * numseqs # Will each one replicated like with [[]] * n?
     for pos in cluster:
        seqnum = get_seqnum(pos)
@@ -579,6 +633,7 @@ def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
                continue
       I_tmp.append(I_query)
       D_tmp.append(D_query)
+   print(padded_seqlen)
    D =  [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
    I =  [I_tmp[i:i + padded_seqlen] for i in range(0, len(I_tmp), padded_seqlen)]
 
@@ -586,13 +641,15 @@ def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
 
 
 
-def get_besthits(D, I, index_to_aa, padded_seqlen):
+def get_besthits(D, I, index_to_aa, padded_seqlen, minscore = 0.5, to_exclude = [] ):
 
    #aa_to_index = {value: key for key, value in index_to_aa.items()}
 
    hitlist = []
    for query_seq in range(len(D)):
      
+      if query_seq in to_exclude: 
+          continue
       for query_aa in range(len(D[query_seq])):
            # Non-sequence padding isn't in dictionary
            try:
@@ -609,7 +666,8 @@ def get_besthits(D, I, index_to_aa, padded_seqlen):
               
                bestscore = scores[0]
                bestmatch_id = ids[0]
-               hitlist.append([query_id, bestmatch_id, bestscore])
+               if bestscore >= minscore:
+                  hitlist.append([query_id, bestmatch_id, bestscore])
 
    return(hitlist) 
 
@@ -649,12 +707,12 @@ def clustering_to_clusterlist(G, clustering):
 def get_walktrap(hitlist):
     G = igraph.Graph.TupleList(edges=hitlist, directed=True)
     # Remove multiedges and self loops
-    print("Remove multiedges and self loops")
+    #print("Remove multiedges and self loops")
     G = G.simplify()
     
-    print("start walktrap")
+    #print("start walktrap")
     clustering = G.community_walktrap(steps = 1).as_clustering()
-    print("walktrap done")
+    #print("walktrap done")
 
 
     clusters_list = clustering_to_clusterlist(G, clustering)
@@ -725,6 +783,8 @@ def clusters_to_cluster_order(clusters_filt, seqs, remove_both = True):
 
     print("Get a single cluster order with topological sort")
 
+
+
     cluster_order = get_topological_sort(cluster_orders_dag) 
  
     print("For each sequence check that the cluster order doesn't conflict with aa order")
@@ -755,7 +815,7 @@ def clusters_to_cluster_order(clusters_filt, seqs, remove_both = True):
 
 
 
-def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
+def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10, minscore1 = 0.9):
     """
     Control for running whol alignment process
     Last four layers [-4, -3, -2, -1] is a good choice for layers
@@ -763,6 +823,8 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     padding tells amount of padding to remove from seqs
     model = prot_bert_bfd
     """
+
+    numseqs = len(seqs)
 
     print("load tokenizer")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -779,21 +841,46 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     #seqlens = [len(x.replace(" ", "")) for x in seqs]
     print("start hidden_states")
     #print(seqs)
-    hstates_list = get_hidden_states(seqs, model, tokenizer, layers)
+    hstates_list, sentence_embeddings = get_hidden_states(seqs, model, tokenizer, layers, return_sentence = True)
     print("end hidden states")
-    #print(hstates_list)
-    #print(hstates_list.shape)
+
+    print(sentence_embeddings)
+    sentence_array = np.array(sentence_embeddings) 
+    s_index = build_index(sentence_array)
+    s_distance, s_index2 = s_index.search(sentence_array, k = numseqs)
+    print(s_distance)
+
+    prot_scores = []
+    for i in range(len(s_index2)):
+       #prot = s_index2[i]
+       prot_score = []
+       for j in range(numseqs):
+            ind = s_index2[i,j]
+            if ind == i:
+              continue
+            prot_score.append(s_distance[i,j])
+       prot_scores.append(prot_score)
+
+    G = graph_from_distindex(s_index2, s_distance)
+    to_exclude = candidate_to_remove(G, numseqs)
+
 
     # Drop X's from here
     #print(hstates_list.shape)
     # Remove first and last X padding
-    hstates_list = hstates_list[:,padding:-padding,:]
+    if padding:
+        hstates_list = hstates_list[:,padding:-padding,:]
+
     padded_seqlen = hstates_list.shape[1]
 
+
+
     # After encoding, remove spaces from sequences
-    seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
+    if padding:
+        seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
+    else:
+        seqs = [x.replace(" ", "") for x in seqs]
     seqlens = [len(x) for x in seqs]
-    numseqs = len(seqs)
     #for seq in seqs:
     #   hidden_states = get_hidden_states([seq], model, tokenizer, layers)
     #   hidden_states_list.append(hidden_states)
@@ -829,7 +916,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     D2, I2 = split_distances_to_sequence(D1, I1, index_to_aa, numseqs, padded_seqlen) 
 
     print("get best hitlist")
-    hitlist_top = get_besthits(D2, I2, index_to_aa, padded_seqlen)
+    hitlist_top = get_besthits(D2, I2, index_to_aa, padded_seqlen, minscore = minscore1, to_exclude = to_exclude)
 
     print("Get reciprocal best hits")
     rbh_list = get_rbhs(hitlist_top) 
@@ -856,11 +943,13 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     print("Walktrap clustering")
     clusters_list = get_walktrap(rbh_list)
  
- 
+    #for x in rbh_list:
+    #   print(x) 
     #with open("clustertest.csv", "w") as outfile:
     #   for c in clusters:
     #        outstring = "{},{}\n".format(c[0], c[1])
     #        outfile.write(outstring) 
+    print("start rbh_select")
     clusters_filt = []
     for cluster in clusters_list:
          rbh_select = []
@@ -871,7 +960,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
          singleton_clusters = remove_doubles2(cluster, rbh_select, numseqs, 3)
          if singleton_clusters:
                 clusters_filt.append(singleton_clusters)
-
+    print("remove low matches")
     #clusters_filt = [remove_doubles(x, numseqs, 3) for x in clusters_list]
     clusters_filt = remove_low_match_prots(numseqs, seqlens, clusters_filt, threshold_min = 0.1) 
     print("Remove poorly matching seqs after initial RBH seach")
@@ -905,9 +994,8 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
 
     unassigned = get_unassigned_aas(seqs, pos_to_clustid_dag)
 
-
-    for x in unassigned:
-          print(x)
+    #for x in unassigned:
+    #      print(x)
     # Get sequence between two clusters
     
     
@@ -915,11 +1003,12 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
     new_clusters = []
   
     for gap in unassigned:
-        new_clusters  = new_clusters + address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_dag, cluster_order, clustid_to_clust_topo, numseqs, I2, D2)
+        new_clusters  = new_clusters + address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_dag, cluster_order, clustid_to_clust_topo, numseqs, I2, D2, to_exclude)
 
     clusters_merged = merge_clusters(new_clusters, clusters_filt)
 
-
+    for x in clusters_merged:
+        print(x)
     print("Get merged cluster order")
     # To do: more qc?
     cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge =  clusters_to_cluster_order(clusters_merged, seqs, remove_both = False)
@@ -939,7 +1028,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
 
     new_clusters_still = []
     for gap in still_unassigned:
-        new_clusters_still  = new_clusters_still + address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_merge, cluster_order_merge, clustid_to_clust_merge, numseqs, I2, D2)
+        new_clusters_still  = new_clusters_still + address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_merge, cluster_order_merge, clustid_to_clust_merge, numseqs, I2, D2, to_exclude)
     print("this is a new cluster")
     for x in new_clusters_still:
         print(x)
@@ -970,7 +1059,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10):
   
 
 
-
+# Make parameter actually control this
 def format_sequences(fasta, padding =  10):
    
     # What are the arguments to this? what is test.fasta? 
@@ -979,14 +1068,17 @@ def format_sequences(fasta, padding =  10):
     df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence', 'sequence_spaced'])
     seq_names = df['id'].tolist()
     seqs = df['sequence_spaced'].tolist() 
-    
+
+    padding_aa = " X" * padding
+    padding_left = padding_aa.strip(" ")
+  
     newseqs = []
     for seq in seqs:
-         newseq = "X X X X X X X X X X" + seq  # WHY does this help embedding to not have a space?
-         newseq = newseq + " X X X X X X X X X X"
+         newseq = padding_left + seq  # WHY does this help embedding to not have a space?
+         newseq = newseq + padding_aa
          newseqs.append(newseq)
     newseqs = newseqs
-
+    
     return(newseqs, seq_names)
 
  
@@ -1003,14 +1095,16 @@ if __name__ == '__main__':
 
     #seq_names = ['seq1','seq2', 'seq3', 'seq4']
 
-    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
-    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
+    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+    padding = 10 
+    minscore1 = 0.8
+    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
     #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/ung.vie'
 
 
     # Dag problem needs more work
     #fasta = "tests/znfdoubled.fasta"
-    seqs, seq_names = format_sequences(fasta, padding = 10)
+    seqs, seq_names = format_sequences(fasta, padding = padding)
 
 
     # Maybe choose different set of embeddings
@@ -1037,7 +1131,7 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[0:40], seq_names[0:40], padding = 10)
+    get_similarity_network(layers, model_name, seqs[0:60], seq_names[0:60], padding = padding, minscore1 = minscore1)
 
-    run_tests()
+    #run_tests()
     #unittest.main(buffer = True)

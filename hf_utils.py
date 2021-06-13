@@ -91,6 +91,19 @@ def compare_hidden_states(hidden_states_a, hidden_states_b, k):
 
     return(D, I)
 
+#Mean Pooling - Take attention mask into account for correct averaging
+def mean_pooling(model_output, attention_mask):
+    '''
+    This function is from sentence_transformers
+    #https://www.sbert.net/examples/applications/computing-embeddings/README.html
+    '''
+    token_embeddings = model_output[0] #First element of model_output contains all token embeddings
+    input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+    sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+    return sum_embeddings / sum_mask
+
+
 def kmeans_hidden_states_aas(hidden_states_list, k):
     '''
     Return kmeans clusters for set of embeddings 
@@ -131,7 +144,7 @@ def kmeans_hidden_states(hidden_states, k):
     return(D, I)
 
 ### AA relationships ###
-def get_hidden_states(seqs, model, tokenizer, layers):
+def get_hidden_states(seqs, model, tokenizer, layers, return_sentence = False):
     
     # For a list of sequences, get list of hidden states
     encoded = tokenizer.batch_encode_plus(seqs, return_tensors="pt", padding=True)
@@ -147,8 +160,12 @@ def get_hidden_states(seqs, model, tokenizer, layers):
     #Concatenate final for hidden states into long vector
     pooled_output = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
 
+    if return_sentence == True:
+       sentence_embeddings = mean_pooling(output, encoded['attention_mask'])
+       return(pooled_output, sentence_embeddings)
     # If output shape is [len(seqs), 3, x], make sure there are spaces between each amino acid
     # 3 - CLS,seq,END
-    return pooled_output
+    else:
+        return pooled_output
 
 #
