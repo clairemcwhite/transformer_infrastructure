@@ -825,7 +825,7 @@ def clusters_to_cluster_order(clusters_filt, seqs, remove_both = True, count = 0
 
     for x in cluster_orders_dag:
             clustcounts = Counter(x)
-            print(clustcounts)
+            #print(clustcounts)
             #largest_clust = max(clustcounts, key=clustcounts.get)
             #print(clustcounts)
             #print(largest_clust)
@@ -1050,7 +1050,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10, mi
     clusters_filt = list(clustid_to_clust_topo.values())  
 
  
-    make_alignment(cluster_order, numseqs, clustid_to_clust_topo)
+    alignment = make_alignment(cluster_order, numseqs, clustid_to_clust_topo)
    
 
     # Write sequences with aa ids
@@ -1070,28 +1070,35 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10, mi
     print("Get sets of unaccounted for amino acids")
 
 
+    for gapfilling_attempt in range(0, 5):
+        gapfilling_attempt = gapfilling_attempt + 1
+        print("Gap filling attempt: ".format(gapfilling_attempt))             
+        unassigned = get_unassigned_aas(seqs, pos_to_clustid_dag)
+        if len(unassigned) == 0:
+            print("Alignment complete after {} gapfilling attempt".format(gapfilling_attempt))
+            return(alignment)
+        else:
+            unassigned_seqs = []
+            print("These are still unassigned")
+            for x in unassigned:
+               print(x)
+               unassigned_seqs.append(x[3])
+            print(list(set(unassigned_seqs)), to_exclude)
+            if list(set(unassigned_seqs)) == list(set(to_exclude)):
+               print("Alignment complete, following sequences excluded")
+               print(to_exclude)
+               return(alignment)
 
-    unassigned = get_unassigned_aas(seqs, pos_to_clustid_dag)
-
-    #for x in unassigned:
-    #      print(x)
-    # Get sequence between two clusters
+        cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, alignment, clusters_filt = fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, clusters_filt)
     
-     #['s0-5-L', 's1-5-I', 's3-0-L', 's4-0-I', 's13-0-L', 's14-0-L', 's17-0-I', 's30-0-I', 's29-0-I']
 
-     #['s0-6-L', 's1-6-L', 's3-1-L', 's4-1-L', 's5-0-L', 's6-0-L', 's7-0-I', 's8-0-L', 's9-0-L', 's10-0-L', 's11-0-L', 's12-0-I', 's13-1-L', 's14-1-L', 's15-0-L', 's16-0-L', 's17-1-Q', 's18-0-L', 's19-0-V', 's20-0-V', 's21-0-V', 's22-0-L', 's23-0-M', 's24-0-L', 's26-0-A', 's28-0-V', 's34-0-I', 's35-0-I', 's37-0-A', 's29-1-E', 's30-1-E']
- 
-# During address_unassigned
-# Check if a member of a new cluster is in more than one old cluster
-# If so, remove it from new cluster
-# s0-5L-duplicate
-     # New clusteri ['s0-5-L', 's1-5-I', 's3-0-L', 's4-0-I', 's13-0-L', 's14-0-L', 's17-0-I', 's29-0-I', 's30-0-I', 's2-17-I', 's39-0-V', 's46-0-I', 's47-0-I', 's53-0-L', 's54-0-V', 's55-0-L', 's56-0-V']
-   
-     #new cluster ['s39-1-E', 's46-1-E', 's47-1-E', 's54-1-E', 's55-1-E', 's56-1-E', 's0-6-L', 's1-6-L', 's3-1-L', 's4-1-L', 's5-0-L', 's6-0-L', 's7-0-I', 's8-0-L', 's9-0-L', 's10-0-L', 's11-0-L', 's12-0-I', 's13-1-L', 's14-1-L', 's15-0-L', 's16-0-L', 's17-1-Q', 's18-0-L', 's19-0-V', 's20-0-V', 's21-0-V', 's22-0-L', 's23-0-M', 's24-0-L', 's26-0-A', 's28-0-V', 's29-1-E', 's30-1-E', 's34-0-I', 's35-0-I', 's37-0-A', 's53-1-Q', 's2-18-D', 's58-0-I']
+    return(alignment)   
 
 
-    # Merged ['s0-5-L', 's1-5-I', 's2-2-Y', 's3-0-L', 's4-0-I', 's13-0-L', 's14-0-L', 's17-0-I', 's29-0-I', 's30-0-I', 's58-0-I', 's39-1-E', 's46-1-E', 's47-1-E', 's54-1-E', 's55-1-E', 's56-1-E', 's0-6-L', 's1-6-L', 's3-1-L', 's4-1-L', 's5-0-L', 's6-0-L', 's7-0-I', 's8-0-L', 's9-0-L', 's10-0-L', 's11-0-L', 's12-0-I', 's13-1-L', 's14-1-L', 's15-0-L', 's16-0-L', 's17-1-Q', 's18-0-L', 's19-0-V', 's20-0-V', 's21-0-V', 's22-0-L', 's23-0-M', 's24-0-L', 's26-0-A', 's28-0-V', 's29-1-E', 's30-1-E', 's34-0-I', 's35-0-I', 's37-0-A', 's53-1-Q', 's2-18-D', 's2-17-I', 's39-0-V', 's46-0-I', 's47-0-I', 's53-0-L', 's54-0-V', 's55-0-L', 's56-0-V'] 
 
+def fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, clusters_filt):        
+    # extra arguments?
+    #unassigned = get_unassigned_aas(seqs, pos_to_clustid_dag)
     new_clusters = []
   
     for gap in unassigned:
@@ -1100,23 +1107,23 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10, mi
 
     # Due to additional walktrap, there's always a change that a new cluster won't be entirely consistent with previous clusters. 
     # In this section, remove any members of a new cluster that would bridge between previous clusters and cause over collapse
-    print(pos_to_clustid_dag)
+    #print(pos_to_clustid_dag)
     new_clusters_filt = []
     for clust in new_clusters:
          clustids = []
          posids = []
          new_additions = []
          for pos in clust:      
-            print(pos)
+            #print(pos)
             if pos in pos_to_clustid_dag.keys():
                clustid = pos_to_clustid_dag[pos]
                clustids.append(clustid)
                posids.append(pos)
-               print(pos, clustid)
+               #print(pos, clustid)
             else:
                 # Position wasn't previously clustered
                 new_additions.append(pos)
-         print("posids", posids)                  
+         #print("posids", posids)                  
          if len(list(set(clustids))) > 1:
             print("new cluster contains component of multiple previous clusters. Keeping largest matched cluster")
             clustcounts = Counter(clustids)
@@ -1126,20 +1133,20 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10, mi
             new_clust = sel_pos + new_additions
             #skip clusters that join two clusters
             #new_clusters_filt.append(new_clust)
-            if "s58-82-N" in new_clust or "s58-83-E" in new_clust:
-                print("split catch")
-                print(clustids)
-                print(posids)
-                print(sel_pos) 
-                print(new_additions)
-                print(clustcounts)
-                print(largest_clust)
+            #if "s58-82-N" in new_clust or "s58-83-E" in new_clust:
+            #    print("split catch")
+            #    print(clustids)
+            #    print(posids)
+            #    print(sel_pos) 
+            #    print(new_additions)
+            #    print(clustcounts)
+            #    print(largest_clust)
                 
          else:
             new_clusters_filt.append(clust)             
 
-    for x in new_clusters_filt:
-       print("new cluster", x)
+    #for x in new_clusters_filt:
+    #   print("new cluster", x)
 
     # T0o much merging happening
     # See s4-0-I, s4-1-L in cluster 19 of 0-60 ribo
@@ -1153,47 +1160,38 @@ def get_similarity_network(layers, model_name, seqs, seq_names, padding = 10, mi
     # To do: more qc?
     cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge =  clusters_to_cluster_order(clusters_merged, seqs, remove_both = False)
 
-    print("First gap filling alignment")
+    #print("First gap filling alignment")
     alignment = make_alignment(cluster_order_merge, numseqs, clustid_to_clust_merge)
+    return(cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge, alignment, clusters_merged)
 
-    still_unassigned = get_unassigned_aas(seqs, pos_to_clustid_merge)
-
-    if len(still_unassigned) == 0:
-          print("Complete after first gap filling")
-          return(alignment)
-    print("len", len(still_unassigned))
-    print("These are still unassigned")
-    for x in still_unassigned:
-      print(x)
-
-    new_clusters_still = []
-    for gap in still_unassigned:
-        new_clusters_still  = new_clusters_still + address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_merge, cluster_order_merge, clustid_to_clust_merge, numseqs, I2, D2, to_exclude)
-    print("this is a new cluster2")
-    for x in new_clusters_still:
-        print("new_cluster2", x)
-
-
-    print("Need to get new clusters_filt2")
-    clusters_merged = list(clustid_to_clust_merge.values())   
-
-
-
-    clusters_merged2 = merge_clusters(new_clusters_still, clusters_merged)
-    print("Get order2")
-
-    cluster_order_merge2, clustid_to_clust_merge2, pos_to_clustid_merge2 =  clusters_to_cluster_order(clusters_merged2, seqs, remove_both = False)
-
-    print("After gap filling 2")
-    alignment = make_alignment(cluster_order_merge2, numseqs, clustid_to_clust_merge2)
-
-    still_unassigned2 = get_unassigned_aas(seqs, pos_to_clustid_merge2)
-    print("final unassigned")
-    for x in still_unassigned2:
-           print(x)
-
-
-    return(alignment)
+#    new_clusters_still = []
+#    for gap in still_unassigned:
+#        new_clusters_still  = new_clusters_still + address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_merge, cluster_order_merge, clustid_to_clust_merge, numseqs, I2, D2, to_exclude)
+#    print("this is a new cluster2")
+#    for x in new_clusters_still:
+#        print("new_cluster2", x)
+#
+#
+#    print("Need to get new clusters_filt2")
+#    clusters_merged = list(clustid_to_clust_merge.values())   
+#
+#
+#
+#    clusters_merged2 = merge_clusters(new_clusters_still, clusters_merged)
+#    print("Get order2")
+#
+#    cluster_order_merge2, clustid_to_clust_merge2, pos_to_clustid_merge2 =  clusters_to_cluster_order(clusters_merged2, seqs, remove_both = False)
+#
+#    print("After gap filling 2")
+#    alignment = make_alignment(cluster_order_merge2, numseqs, clustid_to_clust_merge2)
+#
+#    still_unassigned2 = get_unassigned_aas(seqs, pos_to_clustid_merge2)
+#    print("final unassigned")
+#    for x in still_unassigned2:
+#           print(x)
+#
+#
+#    return(alignment)
 
 
 # Make parameter actually control this
@@ -1232,10 +1230,10 @@ if __name__ == '__main__':
 
     #seq_names = ['seq1','seq2', 'seq3', 'seq4']
 
-    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
     padding = 10 
     minscore1 = 0.5
-    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
+    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
     #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/ung.vie'
 
 
@@ -1268,7 +1266,7 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[25:45], seq_names[0:60], padding = padding, minscore1 = minscore1)
+    get_similarity_network(layers, model_name, seqs[0:20], seq_names[0:20], padding = padding, minscore1 = minscore1)
 
     #run_tests()
     #unittest.main(buffer = True)
