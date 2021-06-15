@@ -59,7 +59,7 @@ def graph_from_distindex(index, dist):
 def candidate_to_remove(G, numseqs):
 
     G_score = sum(G.es['weight'])
-    print(G_score)
+    #print(G_score)
           
 
     all_scores = []
@@ -74,14 +74,14 @@ def candidate_to_remove(G, numseqs):
     for i in range(len(all_scores)):
         others = [all_scores[x] for x in range(len(all_scores)) if x != i]
         z = (all_scores[i] - np.mean(others))/np.std(others)
-        print(i, z)
+        #print(i, z)
         # 20 segs = 3, 40 seqs = 1.5i,   
         #/40
 
         if z > 3:
             questionable_z.append(i)
        
-    print(questionable_z) 
+    #print(questionable_z) 
     return(questionable_z)
 
 def graph_from_cluster_orders(cluster_orders):
@@ -787,16 +787,16 @@ def clusters_to_cluster_order(clusters_filt, seqs, remove_both = True, count = 0
     print("status of remove_both", remove_both)
     numseqs = len(seqs)
 
-    for x in clusters_filt:
-         print(x)
+    #for x in clusters_filt:
+    #     print(x)
     pos_to_clustid, clustid_to_clust= get_cluster_dict(clusters_filt, seqs)
 
     #print(clustid_to_clust)
     cluster_orders = get_cluster_orders(pos_to_clustid, seqs)
 
 
-    for i in cluster_orders:
-          print(i)
+    #for i in cluster_orders:
+    #      print(i)
           
 
     #for i in range(len( cluster_orders)):
@@ -807,8 +807,8 @@ def clusters_to_cluster_order(clusters_filt, seqs, remove_both = True, count = 0
     clusters_filt_dag = remove_feedback_edges(cluster_orders, clusters_filt, remove_both)
 
     print("clusters_filt_dag")
-    for x in clusters_filt_dag:
-       print(x)
+    #for x in clusters_filt_dag:
+    #   print(x)
     print("Directed acyclic graph found")
     # unnecessary? Make optional 
     # Could cause errors for a short sequence
@@ -819,7 +819,7 @@ def clusters_to_cluster_order(clusters_filt, seqs, remove_both = True, count = 0
     #Something is happening here that introducted recursion sometimes
     print("Get cluster order after dag")
     pos_to_clust_dag, clustid_to_clust_dag = get_cluster_dict(clusters_filt_dag, seqs)
-    print("pos_to_clust_dag", pos_to_clust_dag)
+    #print("pos_to_clust_dag", pos_to_clust_dag)
 
     cluster_orders_dag = get_cluster_orders(pos_to_clust_dag, seqs)
 
@@ -857,8 +857,8 @@ def clusters_to_cluster_order(clusters_filt, seqs, remove_both = True, count = 0
         clusters_filt_dag = clusters_to_cluster_order(clusters_filt_dag, seqs, remove_both = True, count = count) 
 
         #singleton_clusters = remove_doubles2(cluster, rbh_select, numseqs, 3)
-        for x in clusters_filt_dag:
-            print(x)
+        #for x in clusters_filt_dag:
+        #    print(x)
         #remove_feedback_edges(cluster_orders_dag, clusters_filt_dag, remove_both, count) 
     cluster_order = get_topological_sort(cluster_orders_dag) 
  
@@ -1232,10 +1232,10 @@ if __name__ == '__main__':
 
     #seq_names = ['seq1','seq2', 'seq3', 'seq4']
 
-    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
     padding = 10 
     minscore1 = 0.5
-    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
+    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
     #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/ung.vie'
 
 
@@ -1268,7 +1268,7 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[0:20], seq_names[0:20], padding = padding, minscore1 = minscore1)
+    get_similarity_network(layers, model_name, seqs[25:45], seq_names[0:60], padding = padding, minscore1 = minscore1)
 
     #run_tests()
     #unittest.main(buffer = True)
