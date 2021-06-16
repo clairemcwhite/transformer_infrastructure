@@ -23,12 +23,24 @@ from collections import Counter
 
 import logging
 
+class AA:
+   def __init__(self):
+       self.seqnum = ""
+       self.seqpos = ""
+       self.seqaa = ""
+       #self.clustid = ""
 
+   #__str__ and __repr__ are for pretty printing
+   def __str__(self):
+        return("s{}-{}-{}".format(self.seqnum, self.seqpos, self.seqaa))
+
+   def __repr__(self):
+    return str(self)
+ 
 # This needs to be replaced with class xture
 def get_seqnum(pos):
     seqnum = int(pos.split("-")[0].replace("s", ""))
     return(seqnum)
-# This needs to be replaced with class xture
 
 def get_seqpos(pos):
     seqpos = int(pos.split("-")[1])
@@ -695,7 +707,7 @@ def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
       for j in range(len(I[i])):
            try:
               aa = index_to_aa[I[i][j]]
-              seqnum = get_seqnum(aa)
+              seqnum = aa.seqnum
               I_query[seqnum].append(aa) 
               D_query[seqnum].append(D[i][j])
            except Exception as E:
@@ -1021,14 +1033,32 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
 
  
     logging.info("Convert index position to amino acid position")
+    #index_to_aa = {}
+
+    #for i in range(len(seqs)):
+    #    for j in range(padded_seqlen):
+    #       if j >= seqlens[i]:
+    #         continue 
+    #       aa = "s{}-{}-{}".format(i, j, seqs[i][j])    
+    #       
+    #       index_to_aa[i * padded_seqlen + j] = aa
+    #print(index_to_aa)
+
     index_to_aa = {}
     for i in range(len(seqs)):
         for j in range(padded_seqlen):
            if j >= seqlens[i]:
              continue 
-           aa = "s{}-{}-{}".format(i, j, seqs[i][j])    
+           aa = AA()
+           aa.seqnum = i
+           aa.seqpos = j
+           aa.seqaa =  seqs[i][j]
+           aa.seqid = "s{}-{}-{}".format(i, j, seqs[i][j])
+           #aa = "s{}-{}-{}".format(i, j, seqs[i][j])    
+           #print(aa.seqnum)
            
            index_to_aa[i * padded_seqlen + j] = aa
+
     logging.info("Build index") 
     print("Build index")
    
@@ -1041,11 +1071,13 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     print("Split results into proteins") 
     # Still annoyingly slow
     D2, I2 = split_distances_to_sequence(D1, I1, index_to_aa, numseqs, padded_seqlen) 
-
     logging.info("get best hitlist")
     print("get best hitlist")
     hitlist_top = get_besthits(D2, I2, index_to_aa, padded_seqlen, minscore = minscore1, to_exclude = to_exclude)
 
+    for x in hitlist_top:
+        print(x)
+    return(0)
     logging.info("Get reciprocal best hits")
     print("Get reciprocal best hits")
     rbh_list = get_rbhs(hitlist_top) 
@@ -1304,8 +1336,8 @@ if __name__ == '__main__':
 
     #seq_names = ['seq1','seq2', 'seq3', 'seq4']
 
-    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
-    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
+    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
     padding = 10 
     minscore1 = 0.5
 
@@ -1346,7 +1378,7 @@ if __name__ == '__main__':
     #layers = [-5, -4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
  
-    get_similarity_network(layers, model_name, seqs[0:20], seq_names[0:20], logging, padding = padding, minscore1 = minscore1)
+    get_similarity_network(layers, model_name, seqs[0:5], seq_names[0:5], logging, padding = padding, minscore1 = minscore1)
 
     #run_tests()
     #unittest.main(buffer = True)
