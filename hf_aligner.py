@@ -284,7 +284,7 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
             target_seqs_list[x] = []
             
 
-        print("these are the target seqs")
+        #print("these are the target seqs")
         #for x in target_seqs_list:
         #     print(x)
 
@@ -368,8 +368,8 @@ def merge_clusters(new_clusters, prior_clusters):
        for i in range(0,len(cluster)):
             reduced_edgelist.append([cluster[0],cluster[i]])
    
-    for x in reduced_edgelist:
-         print(x)
+    #for x in reduced_edgelist:
+    #     print(x)
     print("done")
     new_G = igraph.Graph.TupleList(edges=reduced_edgelist, directed=False)
     #new_G = new_G.simplify()
@@ -522,11 +522,11 @@ def remove_doubles(cluster, minclustsize = 0, keep_higher_degree = False, rbh_li
             for key, value in clustcounts.items():
                 if value > 1:
                    to_remove.append(key)
-            print(cluster)
-            print(keep_higher_degree, to_remove)
+            #print(cluster)
+            #print(keep_higher_degree, to_remove)
             # If there's anything in to_remove, keep the one with highest degree
             if len(to_remove) > 0 and keep_higher_degree == True:
-                 print("IS THIS HAPPENING")
+                 #print("IS THIS HAPPENING")
                  rbh_sel = [x for x in rbh_list if x[0] in cluster and x[1] in cluster]
                  G = igraph.Graph.TupleList(edges=rbh_list, directed = False)
                  G = G.simplify() 
@@ -979,7 +979,8 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     
         G = graph_from_distindex(s_index2, s_distance)
         to_exclude = candidate_to_remove(G, numseqs)
-        logging.info("Excluding following sequences: {}".format(",".join(to_exclude)))
+
+        logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
 
     else:
        logging.info("Not removing outlier sequences")
@@ -1303,8 +1304,8 @@ if __name__ == '__main__':
 
     #seq_names = ['seq1','seq2', 'seq3', 'seq4']
 
-    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
-    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
+    #fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
+    fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
     padding = 10 
     minscore1 = 0.5
 
