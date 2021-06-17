@@ -37,20 +37,6 @@ class AA:
    def __repr__(self):
     return str(self)
  
-# This needs to be replaced with class xture
-def get_seqnum(pos):
-    seqnum = int(pos.split("-")[0].replace("s", ""))
-    return(seqnum)
-
-def get_seqpos(pos):
-    seqpos = int(pos.split("-")[1])
-    return(seqpos)
-# This needs to be replaced with class xture
-
-def get_seqaa(pos):
-    seqaa = pos.split("-")[2]
-    return(seqaa)
-
 
 # This is in the goal of finding sequences that poorly match before aligning
 def graph_from_distindex(index, dist):  
@@ -439,7 +425,6 @@ def remove_feedback_edges(cluster_orders, clusters_filt, remove_both):
    
     #cluster_orders_dag = []
     remove_dict = {}
-    print("prob empty", cluster_orders)
     for i in range(len(cluster_orders)):
       remove = []
       for j in range(len(cluster_orders[i]) - 1):
@@ -471,6 +456,9 @@ def remove_feedback_edges(cluster_orders, clusters_filt, remove_both):
     print("remove feedback")
     #dag_or_not = graph_from_cluster_orders(cluster_orders_dag).is_dag()
     #print ("Dag or Not?, ", dag_or_not)
+
+    for x in clusters_filt_dag:
+           print(x)
 
     return(clusters_filt_dag)
 
@@ -574,13 +562,9 @@ def remove_lower_degree(cluster, seqnum, G):
     target_aas = [x for x in cluster if x.seqnum == seqnum]
             #print(aas)       
     degrees = []
-    print(G)
-    for x in G.vs():
-       print(x, x['name'], type(x['name']))
     for aa in target_aas:
 
          degrees.append(G.vs.find(name  = aa).degree())
-         print("worked?")
          # This doesn't 
          #degrees.append(G.degree( aa))
                   # TODO: Get rbh to return scores
@@ -1106,8 +1090,8 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     print("Get reciprocal best hits")
     rbh_list = get_rbhs(hitlist_top) 
 
-    for x in rbh_list:
-         print(x)
+    #for x in rbh_list:
+    #     print(x)
 
     print("got reciprocal besthits")
    
