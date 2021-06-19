@@ -11,12 +11,14 @@ def format_sequence(sequence, no_spaces):
 
    return seq_spaced
 
-def parse_fasta(fasta_path, sequence_out, no_spaces):
+def parse_fasta(fasta_path, sequence_out, no_spaces, truncate = ""):
 
    sequences = []
    with open(sequence_out, "w") as outfile:
 
        for record in SeqIO.parse(fasta_path, "fasta"):
+            if truncate:
+                 record.seq = record.seq[truncate[0]: truncate[1]]
             #print("%s %i" % (record.id, record.seq))
             seq_spaced = format_sequence(record.seq, no_spaces)
             outstring = "{},{}\n".format(record.id, seq_spaced)
