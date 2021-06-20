@@ -586,7 +586,7 @@ def remove_doubles(cluster, minclustsize = 0, keep_higher_degree = False, rbh_li
             else:
                 return(cluster)
 
-def resolve_conflicting_clusters(clusters)
+#def resolve_conflicting_clusters(clusters)
 
 def remove_lower_degree(cluster, seqnum, G):
 
@@ -1102,6 +1102,8 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     print("get best hitlist")
     hitlist_top = get_besthits(D2, I2, index_to_aa, padded_seqlen, minscore = minscore1, to_exclude = to_exclude)
 
+    for x in hitlist_top:
+          print(x)
     logging.info("Get reciprocal best hits")
     print("Get reciprocal best hits")
     rbh_list = get_rbhs(hitlist_top) 
@@ -1128,6 +1130,8 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
           for x in rbh_list:
              outstring = "{},{}\n".format(x[0], x[1])        
              outfile.write(outstring)
+
+    return(0)
     logging.info("Start Walktrap clustering")
     print("Walktrap clustering")
     clusters_list = get_walktrap(rbh_list)
@@ -1436,5 +1440,5 @@ if __name__ == '__main__':
  
     get_similarity_network(layers, model_name, seqs[0:10], seq_names[0:10], logging, padding = padding, minscore1 = minscore1)
 
-    run_tests()
+    #run_tests()
     #unittest.main(buffer = True)
