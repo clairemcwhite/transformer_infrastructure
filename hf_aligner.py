@@ -374,6 +374,7 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
               new_clusters.append([aa])
         return(new_clusters)
 
+
 def merge_clusters(new_clusters, prior_clusters):
     # This messed up a merge, try one o fthe non-igraph solutions
     # Merge clusters using graph
@@ -815,6 +816,58 @@ def clustering_to_clusterlist(G, clustering):
 
     return(clusters_list)
 
+def remove_high_betweenness(rbh_list):
+    '''
+    Get betweenness centrality
+    Each node's betweenness is normalized by dividing by the number of edges that exclude that node. 
+    n = number of nodes in disconnected subgraph
+    correction = = ((n - 1) * (n - 2)) / 2 
+    norm_betweenness = betweenness / correction 
+    Adapted to match NetworkAnalyzer output 
+    '''
+
+    G = igraph.Graph.TupleList(edges=rbh_list, directed=False)
+    # Remove multiedges and self loops
+    #print("Remove multiedges and self loops")
+    G = G.simplify()
+
+
+
+    #Betweenness centrality is computed only for networks that do not contain multiple edges. The betweenness value for each node n is normalized by dividing by the number of node pairs excluding n: (N-1)(N-2)/2, where N is the total number of nodes in the connected component that n belongs to. Thus, the betweenness centrality of each node is a number between 0 and 1.
+
+    # Need to break up network into connected clusters. 
+
+    # Could estimate this with walktrap clustering with more steps if speed is an issue  
+    islands = G.clusters(mode = "weak")
+    print("islands", islands) 
+
+    for sub_G in islands.subgraphs():
+        n = len(sub_G.vs())
+        estimate = sub_G.betweenness(directed=True)
+        print("n", n)   
+        norm = []
+        # Remove small subgraphs
+        if n < 3:
+            continue
+        correction = ((n - 1) * (n - 2)) / 2
+        for x in estimate:
+            x_norm = x / correction
+            norm.append(x_norm)
+        ests = zip(sub_G.vs["name"], estimate, norm)
+          
+        for x in ests:
+           print(x)
+
+
+    #norm = 2 * (max(estimate)*n - est_sum) / ( n*n*n - 4*n*n + 5*n - 2)
+    #norm = 2 * (max(estimate)*n - est_sum) / ( n*n*n - 4*n*n + 5*n - 2)
+    #print(norm)
+   
+    
+    #for x in ests:
+    #       norm = (2 * x[1])/(n*n - 3*n + 2)
+    #       print(x[0], x[1], norm)
+    return(ests)
 def get_walktrap(hitlist):
     G = igraph.Graph.TupleList(edges=hitlist, directed=True)
     # Remove multiedges and self loops
@@ -1131,7 +1184,14 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
              outstring = "{},{}\n".format(x[0], x[1])        
              outfile.write(outstring)
 
+
+    logging.info("Start betweenness calculation to filter cluster-connecting amino acids")
+
+    rbh_list = remove_high_betweenness(rbh_list)
+    #estimate = graph.betweenness(directed=True, cutoff=5)
     return(0)
+
+
     logging.info("Start Walktrap clustering")
     print("Walktrap clustering")
     clusters_list = get_walktrap(rbh_list)
