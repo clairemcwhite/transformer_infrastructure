@@ -353,7 +353,7 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
               print(x)
   
 
-        new_clusters  = first_clustering(new_rbh, betweenness_cutoff = 0.45) 
+        new_clusters  = first_clustering(new_rbh, betweenness_cutoff = 0.45, minclustsize = 0) 
         # INTRO HERE
  
         #if new_rbh:        
@@ -872,7 +872,7 @@ def clustering_to_clusterlist(G, clustering):
 
     return(clusters_list)
 
-def first_clustering(rbh_list, betweenness_cutoff = 0.45):
+def first_clustering(rbh_list, betweenness_cutoff = 0.45, minclustsize = 0):
     '''
     Get betweenness centrality
     Each node's betweenness is normalized by dividing by the number of edges that exclude that node. 
@@ -900,7 +900,11 @@ def first_clustering(rbh_list, betweenness_cutoff = 0.45):
         bet_norm = []
         # Remove small subgraphs
         if n < 3:
-            continue
+            if n < minclustsize:
+               continue
+            else:
+               cluster_list.append(sub_G.vs()['name'])
+               continue
         correction = ((n - 1) * (n - 2)) / 2
         for x in bet:
             x_norm = x / correction
@@ -916,7 +920,7 @@ def first_clustering(rbh_list, betweenness_cutoff = 0.45):
         new_G = sub_G.subgraph(pruned_vs)
 
         connected_set = new_G.vs()['name']
-        if len(connected_set) < 3:
+        if len(connected_set) < minclustsize:
            continue
 
         # If a cluster doesn't contain more than one aa from each sequence, return it
@@ -929,7 +933,7 @@ def first_clustering(rbh_list, betweenness_cutoff = 0.45):
             sub_islands = new_G.clusters(mode = "weak")
             for sub_sub_G in sub_islands.subgraphs():
                 sub_connected_set = sub_sub_G.vs()['name']
-                if len(sub_connected_set) < 3:
+                if len(sub_connected_set) < minclustsize:
                       continue
                 print("after ", sub_connected_set)
  
@@ -940,7 +944,7 @@ def first_clustering(rbh_list, betweenness_cutoff = 0.45):
                     clustering = sub_sub_G.community_walktrap(steps = 1).as_clustering()
                     for cl_sub_G in clustering.subgraphs():
                          sub_sub_connected_set =  cl_sub_G.vs()['name']
-                         if len(sub_sub_connected_set) < 3:
+                         if len(sub_sub_connected_set) < minclustsize:
                              continue 
 
                          print("before remove doubles", sub_sub_connected_set)
@@ -1298,7 +1302,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
 
     logging.info("Start betweenness calculation to filter cluster-connecting amino acids. Also first round clustering")
     
-    clusters_list = first_clustering(rbh_list, betweenness_cutoff = 0.45)
+    clusters_list = first_clustering(rbh_list, betweenness_cutoff = 0.45, minclustsize = 3)
 
 
     #logging.info("Start Walktrap clustering")
