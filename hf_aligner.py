@@ -28,6 +28,7 @@ class AA:
        self.seqnum = ""
        self.seqpos = ""
        self.seqaa = ""
+       self.index = ""
        #self.clustid = ""
 
    #__str__ and __repr__ are for pretty printing
@@ -296,7 +297,7 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
         gap_seqnum = gap[3]
         gap_seqaas = gap[1]
         if gap_seqnum in to_exclude:
-              return([])
+              return([], [])
         target_seqs_list = get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid)
 
         target_seqs_list[gap_seqnum] = gap_seqaas
@@ -369,17 +370,54 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
         clustered_aas = list(flatten(new_clusters))
 
         unmatched = [x for x in gap_seqaas if not x in clustered_aas]     
+        hopelessly_unmatched  = []
+        #This means that's it's the last cycle
         if ignore_betweenness == True:
           
            # If no reciprocal best hits
+           
            for aa in unmatched: 
-                 new_clusters.append([aa])
+                 #print("its index, ", aa.index)
+                 hopelessly_unmatched.append(aa)
+                 #new_clusters.append([aa])
 
-        return(new_clusters)
+        return(new_clusters, hopelessly_unmatched)
+
+def get_particular_score(D, I, aa1, aa2):
+        #print(aa1, aa2)
+        
+        scores = D[aa1.seqnum][aa1.seqpos][aa2.seqnum]
+        #print(scores)
+        ids = I[aa1.seqnum][aa1.seqpos][aa2.seqnum]
+        #print(ids)
+        for i in range(len(ids)):
+           #print(aa1, score_aa, scores[i])
+           if ids[i] == aa2:
+              #print(aa1, aa2, ids[i], scores[i])
+              return(scores[i])
+        else:
+           return(0) 
+
+
+
+
+def address_isolated_aas(unassigned_aa, cohort_aas, D, I, minscore):
+    '''
+    Maybe overwrite score? 
+    Or match to cluster with higher degree
+    '''
+    print("Address isolated aas")
+    connections = []
+    for cohort_aa in cohort_aas:
+        score = get_particular_score(unassigned_aa, cohort_aa, D, I)
+        print(unassigned_aa, cohort_aa, score)
+ 
+    return(cluster)
 
 def squish_clusters(cluster_order, clustid_to_clust, D, I, full_cov_numseq):
     
     '''
+    This will probably not necessary
     There are cases where adjacent clusters should be one cluster. 
     If any quality scores, squish them together(tetris style)
     XA-X  ->  XAX
@@ -919,22 +957,6 @@ def get_besthits(D, I, index_to_aa, padded_seqlen, minscore = 0.1, to_exclude = 
 
    return(hitlist) 
 
-def get_particular_score(D, I, aa1, aa2):
-        #print(aa1, aa2)
-        
-        scores = D[aa1.seqnum][aa1.seqpos][aa2.seqnum]
-        #print(scores)
-        ids = I[aa1.seqnum][aa1.seqpos][aa2.seqnum]
-        #print(ids)
-        for i in range(len(ids)):
-           #print(aa1, score_aa, scores[i])
-           if ids[i] == aa2:
-              #print(aa1, aa2, ids[i], scores[i])
-              return(scores[i])
-        else:
-           return(0) 
-
-
 def get_rbhs(hitlist_top):
     '''
     [aa1, aa2, score (higher = better]
@@ -1410,8 +1432,9 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
            if j >= seqlens[i]:
              continue 
            aa = seqs_aas[i][j]
-           
-           index_to_aa[i * padded_seqlen + j] = aa
+           index_num = i * padded_seqlen + j
+           aa.index = index_num           
+           index_to_aa[index_num] = aa
     #print(index_to_aa) 
     logging.info("Build index") 
     print("Build index")
@@ -1530,19 +1553,27 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     print("Get sets of unaccounted for amino acids")
 
     prev_unassigned = []
+    hopelessly_unassigned = []
     ignore_betweenness = False
     minclustsize = 2
     minscore = 0.1
-    for gapfilling_attempt in range(0, 5):
+    for gapfilling_attempt in range(0, 6):
         gapfilling_attempt = gapfilling_attempt + 1
                
 
         unassigned = get_unassigned_aas(seqs_aas, pos_to_clustid_dag)
         if unassigned == prev_unassigned:
             ignore_betweenness = True 
-            minclustsize = 1 # Change to one once only single aa's are left??
+            minclustsize = 2 # Change to one once only single aa's are left??
             minscore= 0
         prev_unassigned = unassigned
+
+        if len(hopelessly_unassigned) > 0: 
+            print("Do final sort here!")
+            print(hopelessly_unassigned)
+            break
+            # Do index search with the unassigned index
+
         if len(unassigned) == 0:
             print("Alignment complete after {} gapfilling attempt".format(gapfilling_attempt - 1))
             return(alignment)
@@ -1568,7 +1599,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
 
                return(alignment)
 
-        cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, alignment = fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = minscore ,minclustsize = minclustsize, ignore_betweenness = ignore_betweenness)
+        cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, alignment, hopelessly_unassigned = fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = minscore ,minclustsize = minclustsize, ignore_betweenness = ignore_betweenness)
      
 
     return(alignment)   
@@ -1585,9 +1616,14 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clu
     #unassigned = get_unassigned_aas(seqs, pos_to_clustid_dag)
     new_clusters = []
   
+    hopelessly_unassigned = []
     for gap in unassigned:
-        new_clusters  = new_clusters + address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_dag, cluster_order, clustid_to_clust_topo, numseqs, I2, D2, to_exclude, minscore = minscore, ignore_betweenness = ignore_betweenness)
- 
+        newer_clusters, newer_hopelessly_unassigned = address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_dag, cluster_order, clustid_to_clust_topo, numseqs, I2, D2, to_exclude, minscore = minscore, ignore_betweenness = ignore_betweenness)
+
+        new_clusters  = new_clusters + newer_clusters
+        hopelessly_unassigned = hopelessly_unassigned + newer_hopelessly_unassigned
+
+    print("hopelessly unassigned, in fill_in")
     print("New clusters:", new_clusters)
     print("diagnose s0-4-G")
     for x in new_clusters:
@@ -1668,7 +1704,7 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clu
 
     #print("First gap filling alignment")
     alignment = make_alignment(cluster_order_merge, numseqs, clustid_to_clust_merge)
-    return(cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge, alignment)
+    return(cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge, alignment, hopelessly_unassigned)
 
 
 # Make parameter actually control this
@@ -1767,8 +1803,8 @@ if __name__ == '__main__':
     #layers = [-4, -3, -2, -1]
     #layers = [ -5, -10, -9, -8, -3] 
     #layers = [-28]
-    exclude = False
-    get_similarity_network(layers, model_name, seqs[40:60], seq_names[40:60], logging, padding = padding, minscore1 = minscore1, exclude = exclude )
+    exclude = True
+    get_similarity_network(layers, model_name, seqs[0:60], seq_names[0:60], logging, padding = padding, minscore1 = minscore1, exclude = exclude )
 
     #run_tests()
     #unittest.main(buffer = True)
