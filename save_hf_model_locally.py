@@ -12,9 +12,9 @@
 
 
 
-from transformers import AutoTokenizer, AutoModel
+from transformers import AlbertTokenizer, AutoModel
   
-tokenizer = AutoTokenizer.from_pretrained("Rostlab/prot_t5_xxl_bfd")
+tokenizer = AlbertTokenizer.from_pretrained("Rostlab/prot_t5_xxl_bfd")
 tokenizer.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd')
 model = AutoModel.from_pretrained("Rostlab/prot_t5_xxl_bfd")
 model.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd')
