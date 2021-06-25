@@ -1065,6 +1065,14 @@ def first_clustering(rbh_list, betweenness_cutoff = 0.45, minclustsize = 0, igno
             for sub_sub_G in sub_islands.subgraphs():
                 sub_sub_connected_set = get_new_clustering(sub_sub_G, minclustsize, rbh_list)
                 cluster_list.append(sub_sub_connected_set)
+
+        else:
+            print("Dealing with connected set, ignore betweenness")
+            # Potentially break apply_walktrap False to a second step
+            
+            sub_sub_connected_set = get_new_clustering(sub_G, minclustsize, rbh_list, apply_walktrap = False)
+            cluster_list.append(sub_sub_connected_set)
+        
  
     print("First pass clusters")
     for x in cluster_list:
@@ -1073,7 +1081,7 @@ def first_clustering(rbh_list, betweenness_cutoff = 0.45, minclustsize = 0, igno
     return(cluster_list, hb_list)
 
 
-def get_new_clustering(sub_sub_G, minclustsize, rbh_list):
+def get_new_clustering(sub_sub_G, minclustsize, rbh_list, apply_walktrap = True):
 
                 sub_connected_set = sub_sub_G.vs()['name']
                 if len(sub_connected_set) < minclustsize:
@@ -1084,21 +1092,31 @@ def get_new_clustering(sub_sub_G, minclustsize, rbh_list):
 
  
                 sub_finished = check_completeness(sub_connected_set)
+                # Complete if no duplicates
                 if sub_finished == True:
                     return(sub_connected_set)
                 else:
-                    clustering = sub_sub_G.community_walktrap(steps = 1).as_clustering()
-                    for cl_sub_G in clustering.subgraphs():
-                         sub_sub_connected_set =  cl_sub_G.vs()['name']
-                         if len(sub_sub_connected_set) < minclustsize:
-                             continue 
 
-                         print("before remove doubles", sub_sub_connected_set)
-                         sub_sub_connected_set = remove_doubles(sub_sub_connected_set, keep_higher_degree = True, rbh_list = rbh_list)
-                         print("cluster: ", sub_sub_connected_set)
-                         return(sub_sub_connected_set)
-           
-
+                    # Start with this
+                    if apply_walktrap:
+                        clustering = sub_sub_G.community_walktrap(steps = 1).as_clustering()
+                        i = 0
+                        for cl_sub_G in clustering.subgraphs():
+                             print("subgraph # ", i)
+                             sub_sub_connected_set =  cl_sub_G.vs()['name']
+                             if len(sub_sub_connected_set) < minclustsize:
+                                 continue 
+    
+                             print("before remove doubles", sub_sub_connected_set)
+                             sub_sub_connected_set = remove_doubles(sub_sub_connected_set, keep_higher_degree = True, rbh_list = rbh_list)
+                             print("cluster: ", sub_sub_connected_set)
+                             return(sub_sub_connected_set)
+                    else:
+                        trimmed_connected_set = remove_doubles(sub_connected_set, keep_higher_degree = True, rbh_list = rbh_list)
+                        print("after trimming by removing doubles", trimmed_connected_set)
+                        if len(trimmed_connected_set) < minclustsize:
+                            return([])
+                        return(trimmed_connected_set)
   
 
 
@@ -1511,18 +1529,19 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
           # Added X on beginning and end seems to fix at least for start
     print("Get sets of unaccounted for amino acids")
 
-    prev_unaligned = []
+    prev_unassigned = []
     ignore_betweenness = False
     minclustsize = 2
+    minscore = 0.1
     for gapfilling_attempt in range(0, 5):
         gapfilling_attempt = gapfilling_attempt + 1
                
 
         unassigned = get_unassigned_aas(seqs_aas, pos_to_clustid_dag)
-        if unassigned == prev_unaligned:
+        if unassigned == prev_unassigned:
             ignore_betweenness = True 
             minclustsize = 1 # Change to one once only single aa's are left??
-
+            minscore= 0
         prev_unassigned = unassigned
         if len(unassigned) == 0:
             print("Alignment complete after {} gapfilling attempt".format(gapfilling_attempt - 1))
@@ -1549,7 +1568,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
 
                return(alignment)
 
-        cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, alignment = fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = 0.1,minclustsize = minclustsize, ignore_betweenness = ignore_betweenness)
+        cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, alignment = fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = minscore ,minclustsize = minclustsize, ignore_betweenness = ignore_betweenness)
      
 
     return(alignment)   
