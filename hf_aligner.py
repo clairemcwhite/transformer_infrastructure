@@ -1,13 +1,19 @@
 from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, build_index
 from transformer_infrastructure.run_tests import run_tests
 
+from Bio import SeqIO
+#from Bio.Seq import Seq
+from Bio.Align import MultipleSeqAlignment
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+
+
 import faiss
 #import unittest
 fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
 from sentence_transformers import util
 #from iteration_utilities import  duplicates
 
-from Bio import SeqIO
 import pickle
 import argparse
 
@@ -188,8 +194,20 @@ def make_alignment(cluster_order, numseqs, clustid_to_clust):
        print(row_str[0:150])
        alignment_str = alignment_str + row_str + "\n"
         
+    alignment_str_list = ["".join(x) for x in alignment]
+    return(alignment_str_list)
 
-    return(alignment_str)
+def alignment_print(alignment, seq_names):
+        print("right", alignment)
+        records = []
+        
+        
+        for i in range(len(alignment)):
+             print(seq_names[i], alignment[i])
+             records.append(SeqRecord(Seq(alignment[i]), id=seq_names[i]))
+        align = MultipleSeqAlignment(records)
+        print(format(align, 'clustal'))
+        print(format(align, 'fasta'))
 
 def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid):
     #print("start get ranges")
@@ -290,8 +308,10 @@ def get_unassigned_aas(seqs_aas, pos_to_clustid_dag):
               prevclust = []
     return(unassigned)
 
+
 def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2, to_exclude, minscore = 0.1, ignore_betweenness = False):
         new_clusters = []
+
         starting_clustid = gap[0]
         ending_clustid = gap[2] 
         gap_seqnum = gap[3]
@@ -343,10 +363,10 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
  
         new_rbh = get_rbhs(new_hitlist)
 
-        print("gapfilling rbh")
-        for x in new_rbh:
+        #print("gapfilling rbh")
+        #for x in new_rbh:
       
-              print(x)
+        #      print(x)
   
 
         
@@ -362,7 +382,7 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
         #             cluster_filt = remove_doubles(cluster, keep_higher_degree = True, rbh_list = new_rbh)
         #
         #             #print("before remove doubles2", cluster)
-        #             #print("after remove doubles2", cluster_filt)
+       # #             #print("after remove doubles2", cluster_filt)
         #                  
         #             new_clusters.append(cluster_filt)
         #             # For final unresolved, use sort order info. 
@@ -383,6 +403,15 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
 
         return(new_clusters, hopelessly_unmatched)
 
+def get_looser_scores(D, I, aa, hidden_states):
+    
+     hidden_state_aa = hidden_states[aa.index] 
+     D_aa, I_aa =  index.search(hidden_state_aa, k = numseqs*100)
+     print(aa)
+     print(D_aa)
+     print(I_aa)
+      
+ 
 def get_particular_score(D, I, aa1, aa2):
         #print(aa1, aa2)
         
@@ -644,7 +673,7 @@ def remove_feedback_edges(cluster_orders, clusters_filt, remove_both):
            
     print("remove_dict", remove_dict)
     clusters_filt_dag = []
-    print(clusters_filt)
+    #print(clusters_filt)
     for i in range(len(clusters_filt)):
          clust = []
          for aa in clusters_filt[i]:
@@ -1242,10 +1271,6 @@ def clusters_to_dag(clusters_filt, seqs_aas, remove_both = True, dag_reached = F
 
     cluster_orders_dag = get_cluster_orders(pos_to_clust_dag, seqs_aas)
 
-    print("Get cluster order after feedback removeal")
-    pos_to_clust_dag, clustid_to_clust_dag = get_cluster_dict(clusters_filt_dag, seqs_aas)
-
-    cluster_orders_dag = get_cluster_orders(pos_to_clust_dag, seqs_aas)
 
     dag_or_not_func = graph_from_cluster_orders(cluster_orders_dag).simplify().is_dag()
     print ("Dag or Not? from function, ", dag_or_not_func) 
@@ -1262,17 +1287,6 @@ def clusters_to_dag(clusters_filt, seqs_aas, remove_both = True, dag_reached = F
     clusters_filt = list(clustid_to_clust_dag.values())
     return(cluster_orders_dag, pos_to_clust_dag, clustid_to_clust_dag, clusters_filt, dag_reached)
 
-#    # Recursive potential
-#        count = count + 1
-#        print("not yet acyclic, removing more feedback loops, iteration: ", count)
-#        clusters_filt_dag = list(clustid_to_clust_dag.values())
-#        cluster_orders_dag, pos_to_clust_dag = clusters_to_cluster_order(clusters_filt_dag, seqs_aas, remove_both = True, count = count, dag_reached)
-#        return
-#        print("WILL THIS PRINT?")
-#        if count > 5:
-#            
-#           print("max recursion (5) in trimming to directed acyclic graph reached")
-#           return(cluster_orders_dag, pos_to_clust_dag)
 
 
 
@@ -1306,9 +1320,19 @@ def dag_to_cluster_order(cluster_orders_dag, seqs_aas, pos_to_clust_dag, clustid
     return(cluster_order_inorder, clustid_to_clust_inorder, pos_to_clust_inorder)
 
 
+def load_model(model_name):
+    logging.info("Load tokenizer")
+    print("load tokenizer")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    logging.info("Load model")
+    print("load model")
+    model = AutoModel.from_pretrained(model_name, output_hidden_states=True)
+
+    return(model, tokenizer)
 
 
-def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding = 10, minscore1 = 0.5, remove_outlier_sequences = True, exclude = True):
+def get_similarity_network(layers, model, tokenizer, seqs, seq_names, logging, padding = 10, minscore1 = 0.5, remove_outlier_sequences = True, exclude = True):
     """
     Control for running whol alignment process
     Last four layers [-4, -3, -2, -1] is a good choice for layers
@@ -1320,13 +1344,6 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     
     numseqs = len(seqs)
 
-    logging.info("Load tokenizer")
-    print("load tokenizer")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    logging.info("Load model")
-    print("load model")
-    model = AutoModel.from_pretrained(model_name, output_hidden_states=True)
     
     logging.info("Get hidden states")
     print("get hidden states for each seq")
@@ -1402,7 +1419,7 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     logging.info("Convert index position to amino acid position")
     #index_to_aa = {}
 
-    #for i in range(len(seqs)):
+    #for i in raggnge(len(seqs)):
     #    for j in range(padded_seqlen):
     #       if j >= seqlens[i]:
     #         continue 
@@ -1473,8 +1490,8 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     if remove_streaks == True:
         logging.info("Remove streak conflict matches")
         rbh_list = remove_streakbreakers(rbh_list, seqs_aas, seqlens, streakmin = 3)
-    for x in rbh_list:
-      print(x) 
+    #for x in rbh_list:
+    #  print(x) 
    
     ######################################### Do walktrap clustering
     # Why isn't this directed?
@@ -1526,14 +1543,19 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     dag_reached = False
     count = 0
 
+    # I don't think this is going
     while dag_reached == False:
+      
        count = count + 1
+       print("Dag finding attempt number {}".format(count))
        if count > 5:
            print("Dag not reached after {} iteractions".format(count))
            return(1) 
        cluster_orders_dag, pos_to_clust_dag, clustid_to_clust_dag, clusters_filt, dag_reached = clusters_to_dag(clusters_filt, seqs_aas)
-       
-    print("Dag found, getting cluster order with topological sort")
+       print("Dag reached?", dag_reached) 
+
+    print("Is this there the trouble is happening?")
+    print("Dag found, getting cluster order with topological sort, dag_reached = ", dag_reached)
     cluster_order, clustid_to_clust_topo, pos_to_clustid_dag =  dag_to_cluster_order(cluster_orders_dag, seqs_aas, pos_to_clust_dag, clustid_to_clust_dag)
     print("odd region done")  
     print("Need to get new clusters_filt")
@@ -1551,10 +1573,12 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
        # Too much end character dependency
           # Added X on beginning and end seems to fix at least for start
     print("Get sets of unaccounted for amino acids")
+    # Need to 
 
     prev_unassigned = []
     hopelessly_unassigned = []
     ignore_betweenness = False
+
     minclustsize = 2
     minscore = 0.1
     for gapfilling_attempt in range(0, 6):
@@ -1571,7 +1595,10 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
         if len(hopelessly_unassigned) > 0: 
             print("Do final sort here!")
             print(hopelessly_unassigned)
-            break
+            print("unassigned", unassigned)
+            alignment = fill_in_hopeless(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, index, to_exclude)
+            return(alignment)
+           #break
             # Do index search with the unassigned index
 
         if len(unassigned) == 0:
@@ -1588,16 +1615,18 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
                print("Alignment complete, following sequences excluded")
                print(to_exclude)
                 
-               print("try squish")
-               full_cov_seqnum = numseqs - len(to_exclude)
-               cluster_order, clustid_to_clust_topo = squish_clusters(cluster_order, clustid_to_clust_topo, D2, I2, full_cov_seqnum)
-               logging.info("Make squished alignment")
-               alignment = make_alignment(cluster_order, numseqs, clustid_to_clust_topo)
-               logging.info("\n{}".format(alignment))
+               # Not doing squish for now
+               #print("try squish")
+               #full_cov_seqnum = numseqs - len(to_exclude)
+               #cluster_order, clustid_to_clust_topo = squish_clusters(cluster_order, clustid_to_clust_topo, D2, I2, full_cov_seqnum)
+               #logging.info("Make squished alignment")
+               #alignment = make_alignment(cluster_order, numseqs, clustid_to_clust_topo)
+               #logging.info("\n{}".format(alignment))
 
 
 
                return(alignment)
+ 
 
         cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, alignment, hopelessly_unassigned = fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = minscore ,minclustsize = minclustsize, ignore_betweenness = ignore_betweenness)
      
@@ -1605,13 +1634,53 @@ def get_similarity_network(layers, model_name, seqs, seq_names, logging, padding
     return(alignment)   
 
 
+def fill_in_hopeless(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid, numseqs, index, to_exclude):
+
+
+
+    clusters_filt = list(clustid_to_clust_topo.values())
+    for gap in unassigned:
+        print("GAP", gap)
+        starting_clustid = gap[0]
+        ending_clustid = gap[2]
+        gap_seqnum = gap[3]
+        gap_seqaas = gap[1]
+        if gap_seqnum in to_exclude:
+              continue
+        target_seqs_list = get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid) 
+        target_seqs_list[gap_seqnum]= []
+        for x in target_seqs_list:
+           print("target", x)
+        target_seqs = list(flatten(target_seqs_list))
+        if len(target_seqs) == 0:
+            for aa in gap_seqaas:
+                  clusters_filt.append([aa])
+        else:
+           print("Here need to fill in with distant reaches")
+
+    # Until do the else statement
+    clusters_merged = clusters_filt
+
+    print("This needs to check for whether dag is found")
+    cluster_orders_merge, pos_to_clust_merge, clustid_to_clust_merge, clusters_merged, dag_reached = clusters_to_dag(clusters_merged, seqs_aas, remove_both = False)
+
+    print("Is this where it's running into trouble") 
+   
+    print("Dag found, getting cluster order with topological sort of merged clusters")
+    cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge =  dag_to_cluster_order(cluster_orders_merge, seqs_aas, pos_to_clust_merge, clustid_to_clust_merge)
+
+    #cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge =  clusters_to_cluster_order(clusters_merged, seqs_aas, remove_both = False)
+
+    #print("First gap filling alignment")
+    alignment = make_alignment(cluster_order_merge, numseqs, clustid_to_clust_merge)
+    return(alignment)
 
 def fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = 0.1, minclustsize = 2, ignore_betweenness = False ):        
 
     clusters_filt = list(clustid_to_clust_topo.values())
-    print("TESTING OUT CLUSTERS_FILT")
-    for x in clusters_filt:
-        print(x)
+    #print("TESTING OUT CLUSTERS_FILT")
+    #for x in clusters_filt:
+    #    print(x)
     # extra arguments?
     #unassigned = get_unassigned_aas(seqs, pos_to_clustid_dag)
     new_clusters = []
@@ -1695,7 +1764,19 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clu
     dag_reached = False
     count = 0
            #return(1) 
-    cluster_orders_merge, pos_to_clust_merge, clustid_to_clust_merge, clusters_merged, dag_reached = clusters_to_dag(clusters_merged, seqs_aas, remove_both = False)
+
+
+    while dag_reached == False:
+
+       count = count + 1
+       print("Post gapfilling Dag finding attempt number {}".format(count))
+       if count > 5:
+           print("Post gapfilling Dag not reached after {} iteractions".format(count))
+           return(1)
+       #cluster_orders_dag, pos_to_clust_dag, clustid_to_clust_dag, clusters_filt, dag_reached = clusters_to_dag(clusters_filt, seqs_aas)
+       cluster_orders_merge, pos_to_clust_merge, clustid_to_clust_merge, clusters_merged, dag_reached = clusters_to_dag(clusters_merged, seqs_aas, remove_both = False)
+       print("Post gapfilling Dag reached?", dag_reached)
+    # HERE NEED DAG CHECK
 
     print("Dag found, getting cluster order with topological sort of merged clusters")
     cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge =  dag_to_cluster_order(cluster_orders_merge, seqs_aas, pos_to_clust_merge, clustid_to_clust_merge)
@@ -1803,8 +1884,10 @@ if __name__ == '__main__':
     #layers = [-4, -3, -2, -1]
     #layers = [ -5, -10, -9, -8, -3] 
     #layers = [-28]
-    exclude = True
-    get_similarity_network(layers, model_name, seqs[0:60], seq_names[0:60], logging, padding = padding, minscore1 = minscore1, exclude = exclude )
+    exclude = False
+    model, tokenizer = load_model(model_name)
+    alignment = get_similarity_network(layers, model, tokenizer, seqs[0:10], seq_names[0:10], logging, padding = padding, minscore1 = minscore1, exclude = exclude )
+    alignment_print(alignment, seq_names)
 
     #run_tests()
     #unittest.main(buffer = True)
