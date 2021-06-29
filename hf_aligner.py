@@ -1886,7 +1886,7 @@ if __name__ == '__main__':
     #layers = [-28]
     exclude = False
     model, tokenizer = load_model(model_name)
-    alignment = get_similarity_network(layers, model, tokenizer, seqs[0:10], seq_names[0:10], logging, padding = padding, minscore1 = minscore1, exclude = exclude )
+    alignment = get_similarity_network(layers, model, tokenizer, seqs[0:60], seq_names[0:60], logging, padding = padding, minscore1 = minscore1, exclude = exclude )
     alignment_print(alignment, seq_names)
 
     #run_tests()
