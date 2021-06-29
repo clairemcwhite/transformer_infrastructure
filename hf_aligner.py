@@ -57,6 +57,9 @@ def graph_from_distindex(index, dist):
           edges.append(edge)
           weights.append(dist[i,j])
 
+    for i in range(len(edges)):
+      print(edges[i], weights[i])
+       
     G = igraph.Graph.TupleList(edges=edges, directed=False)
     G.es['weight'] = weights
     return(G)
@@ -1352,28 +1355,50 @@ def get_similarity_network(layers, model, tokenizer, seqs, seq_names, logging, p
     logging.info("Hidden states complete")
     print("end hidden states")
 
-    
+    k_select = numseqs 
     if exclude == True:
         logging.info("Removing outlier sequences")
         sentence_array = np.array(sentence_embeddings) 
         s_index = build_index(sentence_array)
-        s_distance, s_index2 = s_index.search(sentence_array, k = numseqs)
+        s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
 
         prot_scores = []
 
         for i in range(len(s_index2)):
            #prot = s_index2[i]
            prot_score = []
-           for j in range(numseqs):
+           for j in range(k_select):
                 ind = s_index2[i,j]
                 if ind == i:
                   continue
                 prot_score.append(s_distance[i,j])
            prot_scores.append(prot_score)
-    
+        print(s_index2) 
+
+        #for x in prot_scores:
+        #    print(x) 
         G = graph_from_distindex(s_index2, s_distance)
+        print(G)
+        G = G.simplify(combine_edges = "first")  # symmetrical, doesn't matter
+        print(G)
         to_exclude = candidate_to_remove(G, numseqs)
-        
+
+
+        print('name', to_exclude)
+        to_delete_ids = [v.index for v in G.vs if v['name'] in to_exclude]
+        print('vertix_id', to_delete_ids)
+        G.delete_vertices(to_delete_ids) 
+        print(G)
+        print("fastgreedy")
+        seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
+        print(seq_clusters)
+   
+        # This has about same output as fastgreedy
+        #print("multilevel")
+        #seq_clusters = G.community_multilevel(weights = 'weight')
+        #print(seq_clusters)
+
+
 
 
         logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
@@ -1381,7 +1406,7 @@ def get_similarity_network(layers, model, tokenizer, seqs, seq_names, logging, p
     else:
        logging.info("Not removing outlier sequences")
        to_exclude = []
-
+    return(0)
     # Drop X's from here
     #print(hstates_list.shape)
     # Remove first and last X padding
@@ -1884,7 +1909,7 @@ if __name__ == '__main__':
     #layers = [-4, -3, -2, -1]
     #layers = [ -5, -10, -9, -8, -3] 
     #layers = [-28]
-    exclude = False
+    exclude = True
     model, tokenizer = load_model(model_name)
     alignment = get_similarity_network(layers, model, tokenizer, seqs[0:60], seq_names[0:60], logging, padding = padding, minscore1 = minscore1, exclude = exclude )
     alignment_print(alignment, seq_names)
