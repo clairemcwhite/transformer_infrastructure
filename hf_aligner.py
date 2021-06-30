@@ -324,8 +324,8 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
         target_seqs_list = get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid)
 
         target_seqs_list[gap_seqnum] = gap_seqaas
-        for x in to_exclude:
-            target_seqs_list[x] = []
+        #for x in to_exclude:
+        #    target_seqs_list[x] = []
             
 
         #print("these are the target seqs")
@@ -414,7 +414,6 @@ def get_looser_scores(D, I, aa, hidden_states):
      print(D_aa)
      print(I_aa)
       
- 
 def get_particular_score(D, I, aa1, aa2):
         #print(aa1, aa2)
         
@@ -1334,20 +1333,33 @@ def load_model(model_name):
 
     return(model, tokenizer)
 
+# Start with doing groups of semantically similar sequences
 
-def get_similarity_network(layers, model, tokenizer, seqs, seq_names, logging, padding = 10, minscore1 = 0.5, remove_outlier_sequences = True, exclude = True):
-    """
-    Control for running whol alignment process
-    Last four layers [-4, -3, -2, -1] is a good choice for layers
-    seqs should be spaced
-    padding tells amount of padding to remove from seqs
-    model = prot_bert_bfd
-    """
+# Then combine with a different approach that doesn't allow order changes
 
-    
+# There is currently redundancy in order determination. 
+
+# For topological sort, could limit to just area that was modified potentially
+
+ 
+# Only do rbh for within same sequence set to start
+# Then can do a limited rbh or none for the final alignment
+# Is there a layer that capture amino acid properties specifically
+# Like a substitute blosum
+
+# Suspect will be a rbh between groups of sequences. 
+# Reciprocal best group hit?
+
+
+def divide_sequences(layers, model, tokenizer, seqs, seq_names, padding, exclude):
+
+    # list of hidden_states lists
+    return(0)
+
+
+def get_seq_groups(layers, model, tokenizer, seqs, seq_names, logging, padding, exclude):
     numseqs = len(seqs)
 
-    
     logging.info("Get hidden states")
     print("get hidden states for each seq")
 
@@ -1355,75 +1367,99 @@ def get_similarity_network(layers, model, tokenizer, seqs, seq_names, logging, p
     logging.info("Hidden states complete")
     print("end hidden states")
 
-    k_select = numseqs 
-    if exclude == True:
-        logging.info("Removing outlier sequences")
-        sentence_array = np.array(sentence_embeddings) 
-        s_index = build_index(sentence_array)
-        s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
-
-        prot_scores = []
-
-        for i in range(len(s_index2)):
-           #prot = s_index2[i]
-           prot_score = []
-           for j in range(k_select):
-                ind = s_index2[i,j]
-                if ind == i:
-                  continue
-                prot_score.append(s_distance[i,j])
-           prot_scores.append(prot_score)
-        print(s_index2) 
-
-        #for x in prot_scores:
-        #    print(x) 
-        G = graph_from_distindex(s_index2, s_distance)
-        print(G)
-        G = G.simplify(combine_edges = "first")  # symmetrical, doesn't matter
-        print(G)
-        to_exclude = candidate_to_remove(G, numseqs)
-
-
-        print('name', to_exclude)
-        to_delete_ids = [v.index for v in G.vs if v['name'] in to_exclude]
-        print('vertix_id', to_delete_ids)
-        G.delete_vertices(to_delete_ids) 
-        print(G)
-        print("fastgreedy")
-        seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
-        print(seq_clusters)
-   
-        # This has about same output as fastgreedy
-        #print("multilevel")
-        #seq_clusters = G.community_multilevel(weights = 'weight')
-        #print(seq_clusters)
-
-
-
-
-        logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-
-    else:
-       logging.info("Not removing outlier sequences")
-       to_exclude = []
-    return(0)
-    # Drop X's from here
-    #print(hstates_list.shape)
-    # Remove first and last X padding
     if padding:
-        logging.info("Adding {} characters of neutral padding X".format(padding))
+        logging.info("Removing {} characters of neutral padding X".format(padding))
         hstates_list = hstates_list[:,padding:-padding,:]
 
     padded_seqlen = hstates_list.shape[1]
     logging.info("Padded sequence length: {}".format(padded_seqlen))
 
 
-    # After encoding, remove spaces from sequences
+    k_select = numseqs 
+    sentence_array = np.array(sentence_embeddings) 
+    s_index = build_index(sentence_array)
+    s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
+
+    G = graph_from_distindex(s_index2, s_distance)
+    print(G)
+    G = G.simplify(combine_edges = "first")  # symmetrical, doesn't matter
+    print(G)
+    if exclude == True:
+        to_exclude = candidate_to_remove(G, numseqs)
+        print('name', to_exclude)
+        to_delete_ids = [v.index for v in G.vs if v['name'] in to_exclude]
+        print('vertix_id', to_delete_ids)
+        G.delete_vertices(to_delete_ids) 
+
+        logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
+
+    else:
+       logging.info("Not removing outlier sequences")
+       to_exclude = []
+ 
+    print("fastgreedy")
+    seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
+       # This has about same output as fastgreedy
+        #print("multilevel")
+        #seq_clusters = G.community_multilevel(weights = 'weight')
+  
+
+    print(seq_clusters)
+    group_hstates_list = []
+    cluster_seqnums_list = []
+    cluster_names_list = []
+    cluster_seqs_list = []
+
+    # TODO use two variable names for spaced and unspaced seqs
     logging.info("Removing spaces from sequences")
     if padding:
         seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
     else:
         seqs = [x.replace(" ", "") for x in seqs]
+
+
+
+    for seq_cluster_G in seq_clusters.subgraphs():
+        hstates = []
+        seq_cluster = seq_cluster_G.vs()['name']
+        print(seq_cluster)
+        cluster_seqnums_list.append(seq_cluster)
+        filter_indices = seq_cluster
+        axis = 0
+        group_hstates = np.take(hstates_list, filter_indices, axis)
+        group_hstates_list.append(group_hstates)
+        print(group_hstates.shape)
+
+        cluster_names = [seq_names[i] for i in filter_indices]
+        cluster_names_list.append(cluster_names)
+   
+        cluster_seq = [seqs[i] for i in filter_indices]
+        cluster_seqs_list.append(cluster_seq)
+       #print(seq_clusters)
+    
+
+    return(cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, group_hstates_list, to_exclude)
+
+
+
+def get_similarity_network(seqs, seq_names, hstates_list, logging, padding = 10, minscore1 = 0.5, remove_outlier_sequences = True, to_exclude = []):
+    """
+    Control for running whole alignment process
+    Last four layers [-4, -3, -2, -1] is a good choice for layers
+    seqs should be spaced
+    padding tells amount of padding to remove from seqs
+    model = prot_bert_bfd
+    """
+    padded_seqlen = hstates_list.shape[1]
+    
+    numseqs = len(seqs)
+
+    
+   # Drop X's from here
+    #print(hstates_list.shape)
+    # Remove first and last X padding
+
+    # After encoding, remove spaces from sequences
     seqlens = [len(x) for x in seqs]
     #for seq in seqs:
     #   hidden_states = get_hidden_states([seq], model, tokenizer, layers)
@@ -1466,7 +1502,7 @@ def get_similarity_network(layers, model, tokenizer, seqs, seq_names, logging, p
            seq_aas.append(aa)
         seqs_aas.append(seq_aas)
 
-
+    # Can this be combined with previous?
     print(seqs_aas)
     index_to_aa = {}
     for i in range(len(seqs_aas)):
@@ -1606,7 +1642,7 @@ def get_similarity_network(layers, model, tokenizer, seqs, seq_names, logging, p
 
     minclustsize = 2
     minscore = 0.1
-    for gapfilling_attempt in range(0, 6):
+    for gapfilling_attempt in range(0, 10):
         gapfilling_attempt = gapfilling_attempt + 1
                
 
@@ -1681,7 +1717,15 @@ def fill_in_hopeless(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust
             for aa in gap_seqaas:
                   clusters_filt.append([aa])
         else:
+           if ending_clustid - starting_clustid ==2:
+               print("Just one space")
+               # Trim the hidden states to just the targets?
+               #get_looser_scores(D, I, aa, hidden_states):
+
+               #for x in target_seqs_list:
+                   
            print("Here need to fill in with distant reaches")
+           
 
     # Until do the else statement
     clusters_merged = clusters_filt
@@ -1855,8 +1899,8 @@ if __name__ == '__main__':
 
     #logging.info("Check for torch")
     #logging.info(torch.cuda.is_available())
-    #model_name = '/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd'
-    model_name = "/scratch/gpfs/cmcwhite/afproject_model/0_Transformer"
+    model_name = '/scratch/gpfs/cmcwhite/prot_bert_bfd'
+    #model_name = "/scratch/gpfs/cmcwhite/afproject_model/0_Transformer"
      #model_name = 'prot_bert_bfd'
     #seqs = ['A A H K C Q T C G K A F N R S S T L N T H A R I H Y A G N P', 'Y K C K Q C G K A F A R S G G L Q K H K R T H', 'Y E C K E C G K S F S A H S S L V T H K R T H', 'Y K C E E C G K A F N R S S N L T K H K I I H', 'A A H K C Q T C G K A F N R S S T L N T H A R I H H A G N P', 'Y K C K Q C G K A F A R S G G L Q K H K R T H', 'Y E C K E C G K S F S A H S S L V T H Y R T H', 'Y K C E E C G K A F N R S S N L T K H K I I Y']
     #seqs = ['H E A L A I', 'H E A I A L']
@@ -1911,9 +1955,34 @@ if __name__ == '__main__':
     #layers = [-28]
     exclude = True
     model, tokenizer = load_model(model_name)
-    alignment = get_similarity_network(layers, model, tokenizer, seqs[0:60], seq_names[0:60], logging, padding = padding, minscore1 = minscore1, exclude = exclude )
-    alignment_print(alignment, seq_names)
+
+    cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, cluster_hstates_list, to_exclude = get_seq_groups(layers, model, tokenizer, seqs[25:50], seq_names[25:50], logging, padding, exclude)
+
+    for i in range(len(cluster_names_list)):
+        group_seqs = cluster_seqs_list[i]
+        group_names = cluster_names_list[i]
+        group_embeddings = cluster_hstates_list[i] 
+  
+        #alignment = get_similarity_network(layers, model, tokenizer, group_seqs, group_names, logging, padding = padding, minscore1 = minscore1, exclude = exclude )
+        alignment = get_similarity_network(group_seqs, group_names, group_embeddings, logging, padding = padding, minscore1 = minscore1, to_exclude = to_exclude )
+
+        alignment_print(alignment, seq_names)
 
     #run_tests()
-    #unittest.main(buffer = True)
+    #unittest.main(buffer = Tru
+    #prot_scores = []
+
+    #for i in range(len(s_index2)):
+    #   #prot = s_index2[i]
+    #   prot_score = []
+    #   for j in range(k_select):
+    #        ind = s_index2[i,j]
+    #        if ind == i:
+    #          continue
+    #        prot_score.append(s_distance[i,j])
+    #   prot_scores.append(prot_score)
+    #print(s_index2) 
+
+    #for x in prot_scores:
+    #    print(x) 
 
