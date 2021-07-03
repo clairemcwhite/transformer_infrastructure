@@ -21,6 +21,7 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModel
 
+import os
 import igraph
 from pandas.core.common import flatten 
 import pandas as pd 
@@ -201,16 +202,17 @@ def make_alignment(cluster_order, numseqs, clustid_to_clust):
     return(alignment_str_list)
 
 def alignment_print(alignment, seq_names):
-        print("right", alignment)
+       
         records = []
         
-        
+              
         for i in range(len(alignment)):
              print(seq_names[i], alignment[i])
              records.append(SeqRecord(Seq(alignment[i]), id=seq_names[i]))
         align = MultipleSeqAlignment(records)
-        print(format(align, 'clustal'))
-        print(format(align, 'fasta'))
+        clustal_form = format(align, 'clustal')
+        fasta_form = format(align, 'fasta')
+        return(clustal_form, fasta_form)
 
 def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid):
     #print("start get ranges")
@@ -312,7 +314,7 @@ def get_unassigned_aas(seqs_aas, pos_to_clustid_dag):
     return(unassigned)
 
 
-def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2, to_exclude, minscore = 0.1, ignore_betweenness = False):
+def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2, to_exclude, minscore = 0.1, ignore_betweenness = False, betweenness_cutoff = 0.45):
         new_clusters = []
 
         starting_clustid = gap[0]
@@ -373,22 +375,7 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
   
 
         
-        new_clusters, hb_list  = first_clustering(new_rbh, betweenness_cutoff = 0.45, minclustsize = 2,  ignore_betweenness = ignore_betweenness) 
-        # INTRO HERE
- 
-        #if new_rbh:        
-        #   new_walktrap = get_walktrap(new_rbh)
-        #   for cluster in new_walktrap:
-        #        if cluster not in new_clusters:
-        #             # Instead of removing double, remove one with lower degree
-        #             #cluster_filt = remove_doubles(cluster, numseqs, 0)
-        #             cluster_filt = remove_doubles(cluster, keep_higher_degree = True, rbh_list = new_rbh)
-        #
-        #             #print("before remove doubles2", cluster)
-       # #             #print("after remove doubles2", cluster_filt)
-        #                  
-        #             new_clusters.append(cluster_filt)
-        #             # For final unresolved, use sort order info. 
+        new_clusters, hb_list  = first_clustering(new_rbh, betweenness_cutoff = betweenness_cutoff, minclustsize = 2,  ignore_betweenness = ignore_betweenness) 
 
         clustered_aas = list(flatten(new_clusters))
 
@@ -407,7 +394,7 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
         return(new_clusters, hopelessly_unmatched)
 
 def get_looser_scores(D, I, aa, hidden_states):
-    
+     ''' Not used yet''' 
      hidden_state_aa = hidden_states[aa.index] 
      D_aa, I_aa =  index.search(hidden_state_aa, k = numseqs*100)
      print(aa)
@@ -415,6 +402,8 @@ def get_looser_scores(D, I, aa, hidden_states):
      print(I_aa)
       
 def get_particular_score(D, I, aa1, aa2):
+        ''' Not used yet '''
+
         #print(aa1, aa2)
         
         scores = D[aa1.seqnum][aa1.seqpos][aa2.seqnum]
@@ -1075,13 +1064,16 @@ def first_clustering(rbh_list, betweenness_cutoff = 0.45, minclustsize = 0, igno
                 x_norm = x / correction
                 #if x_norm > 0.45:
                 bet_norm.append(x_norm)
+            
                 #bet_dict[sub_G.vs["name"]] = norm
             sub_G.vs()['bet_norm'] = bet_norm          
             print("before", sub_G.vs()['name'])
+ 
+            #bet_names = list(zip(sub_G.vs()['name'], bet_norm))
             # A node with bet_norm 0.5 is perfectly split between two clusters
             # Only select nodes with normalized betweenness before 0.45
             pruned_vs = sub_G.vs.select([v for v, b in enumerate(bet_norm) if b < betweenness_cutoff]) 
-    
+                
             new_G = sub_G.subgraph(pruned_vs)
     
             # It's not necesarrily a connected set since the hb nodes were removed
@@ -1637,21 +1629,30 @@ def get_similarity_network(seqs, seq_names, hstates_list, logging, padding = 10,
     # Need to 
 
     prev_unassigned = []
+    all_prev_unassigned = []
     hopelessly_unassigned = []
     ignore_betweenness = False
 
     minclustsize = 2
     minscore = 0.1
-    for gapfilling_attempt in range(0, 10):
+    betweenness_cutoff = 0.45
+    for gapfilling_attempt in range(0, 12):
         gapfilling_attempt = gapfilling_attempt + 1
                
+        #if gapfilling_attempt > 3:
+        #       betweenness_cutoff = 0.4
 
         unassigned = get_unassigned_aas(seqs_aas, pos_to_clustid_dag)
+
+        if unassigned in all_prev_unassigned:
+            betweenness_cutoff = betweenness_cutoff + 0.02
+   
         if unassigned == prev_unassigned:
             ignore_betweenness = True 
             minclustsize = 2 # Change to one once only single aa's are left??
             minscore= 0
         prev_unassigned = unassigned
+        all_prev_unassigned.append(unassigned) 
 
         if len(hopelessly_unassigned) > 0: 
             print("Do final sort here!")
@@ -1687,9 +1688,9 @@ def get_similarity_network(seqs, seq_names, hstates_list, logging, padding = 10,
 
 
                return(alignment)
- 
+        print("THE BETWEENNESS CUTOFF IS {}".format(betweenness_cutoff)) 
 
-        cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, alignment, hopelessly_unassigned = fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = minscore ,minclustsize = minclustsize, ignore_betweenness = ignore_betweenness)
+        cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, alignment, hopelessly_unassigned = fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = minscore ,minclustsize = minclustsize, ignore_betweenness = ignore_betweenness, betweenness_cutoff = betweenness_cutoff)
      
 
     return(alignment)   
@@ -1744,7 +1745,7 @@ def fill_in_hopeless(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust
     alignment = make_alignment(cluster_order_merge, numseqs, clustid_to_clust_merge)
     return(alignment)
 
-def fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = 0.1, minclustsize = 2, ignore_betweenness = False ):        
+def fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust_topo, pos_to_clustid_dag, numseqs, I2, D2, to_exclude, minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.45 ):        
 
     clusters_filt = list(clustid_to_clust_topo.values())
     #print("TESTING OUT CLUSTERS_FILT")
@@ -1756,7 +1757,8 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clu
   
     hopelessly_unassigned = []
     for gap in unassigned:
-        newer_clusters, newer_hopelessly_unassigned = address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_dag, cluster_order, clustid_to_clust_topo, numseqs, I2, D2, to_exclude, minscore = minscore, ignore_betweenness = ignore_betweenness)
+        print("BETWEEENNESS BTW", betweenness_cutoff)
+        newer_clusters, newer_hopelessly_unassigned = address_unassigned(gap, seqs, seqs_aas, pos_to_clustid_dag, cluster_order, clustid_to_clust_topo, numseqs, I2, D2, to_exclude, minscore = minscore, ignore_betweenness = ignore_betweenness, betweenness_cutoff = betweenness_cutoff)
 
         new_clusters  = new_clusters + newer_clusters
         hopelessly_unassigned = hopelessly_unassigned + newer_hopelessly_unassigned
@@ -1958,17 +1960,61 @@ if __name__ == '__main__':
 
     cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, cluster_hstates_list, to_exclude = get_seq_groups(layers, model, tokenizer, seqs[25:50], seq_names[25:50], logging, padding, exclude)
 
+    aln_fasta_list = []
     for i in range(len(cluster_names_list)):
         group_seqs = cluster_seqs_list[i]
         group_names = cluster_names_list[i]
         group_embeddings = cluster_hstates_list[i] 
   
         #alignment = get_similarity_network(layers, model, tokenizer, group_seqs, group_names, logging, padding = padding, minscore1 = minscore1, exclude = exclude )
+
+        group_seqs_out = "alignment_group{}.fasta".format(i)
+        group_records = []
+
+        for j in range(len(group_seqs)):
+             group_records.append(SeqRecord(Seq(group_seqs[j]), id=group_names[j], description = ''))
+ 
+        with open(group_seqs_out, "w") as output_handle:
+            SeqIO.write(group_records, output_handle, "fasta")
+
         alignment = get_similarity_network(group_seqs, group_names, group_embeddings, logging, padding = padding, minscore1 = minscore1, to_exclude = to_exclude )
+        alignments_i = alignment_print(alignment, group_names)
 
-        alignment_print(alignment, seq_names)
+        
 
-    #run_tests()
+        clustal_align_out = "alignment_group{}.clustal.aln".format(i)
+        clustal_align_i = alignments_i[0]
+        with open(clustal_align_out, "w") as o:
+              o.write(clustal_align_i)
+
+        fasta_align_out = "alignment_group{}.fasta.aln".format(i)
+        fasta_align_i = alignments_i[1]
+        with open(fasta_align_out, "w") as o:
+              o.write(fasta_align_i)
+        aln_fasta_list.append([fasta_align_i])
+
+    print("Consolidate alignments with mafft")
+
+    seq_count = 1
+    with open("all_fastas_aln.fasta", "w") as o:
+
+        with open("key_table.txt", "w") as tb:
+            for k in range(len(aln_fasta_list)):
+
+               for s in range(len(aln_fasta_list[k])):
+                    o.write(aln_fasta_list[k][s])
+                    tb.write("{} ".format(seq_count))
+                    seq_count = seq_count + 1
+               tb.write("\n")
+
+    os.system("singularity exec /scratch/gpfs/cmcwhite/mafft_7.475.sif mafft --merge key_table.txt --auto all_fastas_aln.fasta > out.mafft")
+
+    os.system("cat out.mafft")
+
+         
+
+
+     #run_tests()
     #unittest.main(buffer = Tru
     #prot_scores = []
 
