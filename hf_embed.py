@@ -21,6 +21,25 @@ with open("embeddings.pkl", "rb") as f:
 Claire D. McWhite
 '''
 
+def get_embed_args():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--model", dest = "model_path", type = str, required = True,
+                        help="Model directory Ex. /path/to/model_dir")
+    parser.add_argument("-f", "--fasta", dest = "fasta_path", type = str, required = True,
+                        help="path to a fasta of protein sequences")
+    parser.add_argument("-op", "--outpickle", dest = "pkl_out", type = str, required = True,
+                        help="output .pkl filename")
+    parser.add_argument("-s", "--sequence_embeddings", dest = "get_sequence_embeddings", type = bool, default = True,
+                        help="Whether to get sequence embeddings, default: True")
+    parser.add_argument("-a", "--aa_embeddings", dest = "get_aa_embeddings", type = bool, default = True,
+                        help="Whether to get amino-acid embeddings, default: True")
+    parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = bool, default = False,
+                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Not needed for sets of complete sequences or domains.")
+
+
+    args = parser.parse_args()
+    return(args)
 
 def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = False):
    ''' 
@@ -33,23 +52,34 @@ def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = False):
                              Useful for when all sequences don't start/end at "same" amino acid 
  
    Returns: 
-       list of sequences  
+       list of [id, sequence] 
    '''
    sequences = []
-
+   sequences_spaced = []
+   ids = []
    for record in SeqIO.parse(fasta_path, "fasta"):
        if truncate:
            seq = seq[0:truncate]
        else:
            seq = record.seq
 
-       if extra_padding == True: 
-           seq = "XXXXX{}XXXXX".format(seq)
+       #if extra_padding == True: 
+       #    seq = "XXXXX{}XXXXX".format(seq)
 
        seq_spaced = seq_spaced =  " ".join(seq)
-       sequences.append(seq_spaced)
 
-   return(sequences)
+       if extra_padding == True:
+            padding_aa = " X" * 5
+            padding_left = padding_aa.strip(" ")
+    #
+            seq_spaced = padding_left + seq_spaced  # WHY does this help embedding to not have a space?
+            seq_spaced = seq_spaced + padding_aa
+  
+       ids.append(record.id)
+       sequences.append(seq)
+       sequences_spaced.append(seq_spaced)
+       print(seq_spaced)
+   return(ids, sequences, sequences_spaced)
 
 
 def mean_pooling(model_output, attention_mask):
@@ -85,7 +115,8 @@ def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""
     # Concatenate hidden states into long vector
     aa_embeddings = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
     if padding:
-        aa_embeddings = hstates_list[:,padding:-padding,:]
+        print("REMOVING PADDING??", padding)
+        aa_embeddings = aa_embeddings[:,padding:-padding,:]
 
     return(aa_embeddings)
 
@@ -162,31 +193,12 @@ def embed_sequences(seqs, model_path, get_sequence_embeddings = True, get_aa_emb
 
     
 
-def get_embed_args():
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--model", dest = "model_path", type = str, required = True,
-                        help="Model directory Ex. /path/to/model_dir")
-    parser.add_argument("-f", "--fasta", dest = "fasta_path", type = str, required = True,
-                        help="path to a fasta of protein sequences")
-    parser.add_argument("-op", "--outpickle", dest = "pkl_out", type = str, required = True,
-                        help="output .pkl filename")
-    parser.add_argument("-s", "--sequence_embeddings", dest = "get_sequence_embeddings", type = bool, default = True,
-                        help="Whether to get sequence embeddings, default: True")
-    parser.add_argument("-a", "--aa_embeddings", dest = "get_aa_embeddings", type = bool, default = True,
-                        help="Whether to get amino-acid embeddings, default: True")
-    parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = bool, default = False,
-                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Not needed for sets of complete sequences or domains.")
-
-
-    args = parser.parse_args()
-    return(args)
-
 if __name__ == "__main__":
 
     args = get_embed_args()
-    sequences = parse_fasta_for_embed(args.fasta_path, args.extra_padding)
-    embedding_dict = embed_sequences(sequences, 
+    ids, sequences, sequences_spaced = parse_fasta_for_embed(args.fasta_path, args.extra_padding)
+
+    embedding_dict = embed_sequences(sequences_spaced, 
                                     args.model_path, 
                                     get_sequence_embeddings = args.get_sequence_embeddings, 
                                     get_aa_embeddings = args.get_aa_embeddings, 
@@ -203,6 +215,10 @@ if __name__ == "__main__":
              print(key)
              print(value)
              pOut.write("Object {} dimensions: {}\n".format(key, value.shape))
+        pOut.write("Contains sequences:\n")
+        for x in ids:
+          pOut.write("{}\n".format(x))
+
 
 
 

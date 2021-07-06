@@ -1,5 +1,6 @@
-from transformer_infrastructure.hf_utils import parse_fasta, get_hidden_states, build_index
+from transformer_infrastructure.hf_utils import build_index
 from transformer_infrastructure.run_tests import run_tests
+from transformer_infrastructure.hf_embed import parse_fasta_for_embed, embed_sequences 
 
 from Bio import SeqIO
 #from Bio.Seq import Seq
@@ -1330,7 +1331,7 @@ def dag_to_cluster_order(cluster_orders_dag, seqs_aas, pos_to_clust_dag, clustid
     return(cluster_order_inorder, clustid_to_clust_inorder, pos_to_clust_inorder)
 
 
-def load_model(model_name):
+def load_model_old(model_name):
     logging.info("Load tokenizer")
     print("load tokenizer")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -1365,26 +1366,33 @@ def divide_sequences(layers, model, tokenizer, seqs, seq_names, padding, exclude
     return(0)
 
 
-def get_seq_groups(layers, model, tokenizer, seqs, seq_names, logging, padding, exclude):
+def get_seq_groups(layers, model_name, seqs, seq_names, logging, padding, exclude):
     numseqs = len(seqs)
 
     logging.info("Get hidden states")
     print("get hidden states for each seq")
 
-    hstates_list, sentence_embeddings = get_hidden_states(seqs, model, tokenizer, layers, return_sentence = True)
+    embedding_dict = embed_sequences(seqs,
+                                    model_name,
+                                    get_sequence_embeddings = True,
+                                    get_aa_embeddings = True,
+                                    padding = 5)
+
+    
+    #hstates_list, sentence_embeddings = get_hidden_states(seqs, model, tokenizer, layers, return_sentence = True)
     logging.info("Hidden states complete")
     print("end hidden states")
 
-    if padding:
-        logging.info("Removing {} characters of neutral padding X".format(padding))
-        hstates_list = hstates_list[:,padding:-padding,:]
+    #if padding:
+    #    logging.info("Removing {} characters of neutral padding X".format(padding))
+    #    hstates_list = hstates_list[:,padding:-padding,:]
 
-    padded_seqlen = hstates_list.shape[1]
+    padded_seqlen = embedding_dict['aa_embeddings'].shape[1]
     logging.info("Padded sequence length: {}".format(padded_seqlen))
 
 
     k_select = numseqs 
-    sentence_array = np.array(sentence_embeddings) 
+    sentence_array = np.array(embedding_dict['sequence_embeddings']) 
     s_index = build_index(sentence_array)
     s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
 
@@ -1434,7 +1442,7 @@ def get_seq_groups(layers, model, tokenizer, seqs, seq_names, logging, padding, 
         cluster_seqnums_list.append(seq_cluster)
         filter_indices = seq_cluster
         axis = 0
-        group_hstates = np.take(hstates_list, filter_indices, axis)
+        group_hstates = np.take(embedding_dict['aa_embeddings'], filter_indices, axis)
         group_hstates_list.append(group_hstates)
         print(group_hstates.shape)
 
@@ -1923,26 +1931,26 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, cluster_order, clu
 
 
 # Make parameter actually control this
-def format_sequences(fasta, padding =  10, truncate = ""):
+def format_sequences(fasta, padding =  5):
    
     # What are the arguments to this? what is test.fasta? 
-    sequence_lols = parse_fasta(fasta, "test.fasta", False, truncate)
+    seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta, extra_padding = True)
 
-    df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence', 'sequence_spaced'])
-    seq_names = df['id'].tolist()
-    seqs = df['sequence_spaced'].tolist() 
+    #df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence_spaced'])
+    #seq_names = df['id'].tolist()
+    #seqs = df['sequence_spaced'].tolist() 
 
-    padding_aa = " X" * padding
-    padding_left = padding_aa.strip(" ")
-  
-    newseqs = []
-    for seq in seqs:
-         newseq = padding_left + seq  # WHY does this help embedding to not have a space?
-         newseq = newseq + padding_aa
-         newseqs.append(newseq)
-    newseqs = newseqs
+    #padding_aa = " X" * padding
+    #padding_left = padding_aa.strip(" ")
+    #
+    #newseqs = []
+    #for seq in seqs:
+    #     newseq = padding_left + seq  # WHY does this help embedding to not have a space?
+    #     newseq = newseq + padding_aa
+    #     newseqs.append(newseq)
+    #newseqs = newseqs
     
-    return(newseqs, seq_names)
+    return(seq_names, seqs, seqs_spaced)
 
  
 if __name__ == '__main__':
@@ -1996,8 +2004,7 @@ if __name__ == '__main__':
 
     # Dag problem needs more work
     #fasta = "tests/znfdoubled.fasta"
-    seqs, seq_names = format_sequences(fasta, padding = padding)#, truncate = [0,20])
-
+    seq_names, seqs, seqs_spaced= format_sequences(fasta, padding = padding)#, truncate = [0,20])
 
     # STRAT remove difficult ones
     # Use good ones to build a profile
@@ -2013,10 +2020,12 @@ if __name__ == '__main__':
     #layers = [ -5, -10, -9, -8, -3] 
     #layers = [-28]
     exclude = True
-    model, tokenizer = load_model(model_name)
+    #model, tokenizer = load_model(model_name)
 
-    cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, cluster_hstates_list, to_exclude = get_seq_groups(layers, model, tokenizer, seqs[0:20], seq_names, logging, padding, exclude)
+    cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, cluster_hstates_list, to_exclude = get_seq_groups(layers, model_name, seqs_spaced[0:20], seq_names, logging, padding, exclude)
 
+
+    # PRINT what's the deal with different exclusion
     aln_fasta_list = []
     for i in range(len(cluster_names_list)):
         group_seqs = cluster_seqs_list[i]
