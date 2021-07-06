@@ -3,7 +3,7 @@ import torch
 import faiss
 import numpy as np
 ### Sequence formatting
-def format_sequence(sequence, no_spaces):
+def format_sequence(sequence, add_spaces = True):
    if no_spaces:
        seq_spaced = sequence
    else:
@@ -11,18 +11,18 @@ def format_sequence(sequence, no_spaces):
 
    return seq_spaced
 
-def parse_fasta(fasta_path, sequence_out, no_spaces, truncate = ""):
+def parse_fasta(fasta_path, sequence_out = "", add_spaces = True):
 
    sequences = []
    with open(sequence_out, "w") as outfile:
 
        for record in SeqIO.parse(fasta_path, "fasta"):
-            if truncate:
-                 record.seq = record.seq[truncate[0]: truncate[1]]
-            #print("%s %i" % (record.id, record.seq))
-            seq_spaced = format_sequence(record.seq, no_spaces)
-            outstring = "{},{}\n".format(record.id, seq_spaced)
-            outfile.write(outstring)
+            seq_spaced = format_sequence(record.seq, add_spaces)
+            
+            if sequence_out:
+                outstring = "{},{}\n".format(record.id, seq_spaced)
+                outfile.write(outstring)
+
             sequences.append([record.id, record.seq, seq_spaced])
    
    return(sequences)
