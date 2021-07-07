@@ -47,8 +47,8 @@ def get_embed_args():
                         help="Whether to get sequence embeddings, default: True")
     parser.add_argument("-a", "--aa_embeddings", dest = "get_aa_embeddings", type = bool, default = True,
                         help="Whether to get amino-acid embeddings, default: True")
-    parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = bool, default = False,
-                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Not needed for sets of complete sequences or domains that start at the same character.")
+    parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = bool, default = True,
+                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Potentially not needed for sets of complete sequences or domains that start at the same character.")
 
 
     args = parser.parse_args()
@@ -62,10 +62,10 @@ def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = False):
        str: Path of the fasta file
        truncate (int): Optional length to truncate all sequences to
        extra_padding (bool): Optional to add padding to each sequence to avoid start/end of sequence effects
-                             Useful for when all sequences don't start/end at "same" amino acid 
+                             Useful for when all sequences don't start/end at "same" amino acid. 
  
    Returns: 
-       list of [id, sequence] 
+       [ids], [sequences], [sequences with spaces and any extra padding] 
    '''
    sequences = []
    sequences_spaced = []
@@ -81,11 +81,13 @@ def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = False):
 
        seq_spaced = seq_spaced =  " ".join(seq)
 
+       # 5 X's seems to be a good amount of neutral padding
        if extra_padding == True:
             padding_aa = " X" * 5
             padding_left = padding_aa.strip(" ")
-    #
-            seq_spaced = padding_left + seq_spaced  # WHY does this help embedding to not have a space?
+    
+            # To do: Figure out why embedding are better with removed space between last X and first AA?
+            seq_spaced = padding_left + seq_spaced  
             seq_spaced = seq_spaced + padding_aa
   
        ids.append(record.id)
@@ -113,11 +115,14 @@ def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""
     Get the amino acid embeddings for each sequences
     Pool layers by concatenating selection of layers
     Return shape: (numseqs, length of longest sequence, 1024*numlayers)
+    If adding padding, it's usually 5. 
 
     Takes: 
        model_output: From sequence encoding
        layers (list of ints): By default, pool final four layers of model
        padding (int): If padding was added, remove embeddings corresponding to extra padding before returning 
+
+    Return shape (numseqs x longest seqlength x (1024 * numlayers)
 
     Note: If the output shape of this function is [len(seqs), 3, x], make sure there are spaces between each amino acid
     The "3" corresponds to CLS,seq,END 
@@ -128,7 +133,6 @@ def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""
     # Concatenate hidden states into long vector
     aa_embeddings = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
     if padding:
-        print("REMOVING PADDING??", padding)
         aa_embeddings = aa_embeddings[:,padding:-padding,:]
 
     return(aa_embeddings)
@@ -159,7 +163,7 @@ def load_model(model_path):
 
 def get_encodings(seqs, model_path):
     '''
-    Encode sequences with a model and tokenizer
+    Encode sequences with a transformer model
 
     Takes:
        model_path (str): Path to a particular transformer model
