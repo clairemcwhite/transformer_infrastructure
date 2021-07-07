@@ -30,6 +30,8 @@ tokenizer.save_pretrained(outdir)
 model = AutoModel.from_pretrained(sourcename)
 model.save_pretrained(outdir)
 
+Ex. command
+python transformer_infrastructure/hf_embed.py -m /scratch/gpfs/cmcwhite/prot_bert_bfd/ -f tester.fasta -o test.pkl
 
 Claire D. McWhite
 '''
@@ -41,7 +43,7 @@ def get_embed_args():
                         help="Model directory Ex. /path/to/model_dir")
     parser.add_argument("-f", "--fasta", dest = "fasta_path", type = str, required = True,
                         help="path to a fasta of protein sequences")
-    parser.add_argument("-op", "--outpickle", dest = "pkl_out", type = str, required = True,
+    parser.add_argument("-o", "--outpickle", dest = "pkl_out", type = str, required = True,
                         help="output .pkl filename")
     parser.add_argument("-s", "--sequence_embeddings", dest = "get_sequence_embeddings", type = bool, default = True,
                         help="Whether to get sequence embeddings, default: True")
@@ -52,9 +54,10 @@ def get_embed_args():
 
 
     args = parser.parse_args()
+    
     return(args)
 
-def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = False):
+def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = True):
    ''' 
    Load a fasta of protein sequences and
      add a space between each amino acid in sequence (needed to compute embeddings)
@@ -71,10 +74,10 @@ def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = False):
    sequences_spaced = []
    ids = []
    for record in SeqIO.parse(fasta_path, "fasta"):
+       
+       seq = record.seq
        if truncate:
            seq = seq[0:truncate]
-       else:
-           seq = record.seq
 
        #if extra_padding == True: 
        #    seq = "XXXXX{}XXXXX".format(seq)
@@ -93,7 +96,6 @@ def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = False):
        ids.append(record.id)
        sequences.append(seq)
        sequences_spaced.append(seq_spaced)
-       print(seq_spaced)
    return(ids, sequences, sequences_spaced)
 
 
@@ -213,8 +215,11 @@ def embed_sequences(seqs, model_path, get_sequence_embeddings = True, get_aa_emb
 if __name__ == "__main__":
 
     args = get_embed_args()
+    #print(args.fasta_path, args.extra_padding)
     ids, sequences, sequences_spaced = parse_fasta_for_embed(args.fasta_path, args.extra_padding)
+  
 
+    #print(sequences_spaced)
     embedding_dict = embed_sequences(sequences_spaced, 
                                     args.model_path, 
                                     get_sequence_embeddings = args.get_sequence_embeddings, 
@@ -229,8 +234,8 @@ if __name__ == "__main__":
     pkl_log = "{}.description".format(args.pkl_out)
     with open(pkl_log, "w") as pOut:
         for key, value in embedding_dict.items():
-             print(key)
-             print(value)
+             #print(key)
+             #print(value)
              pOut.write("Object {} dimensions: {}\n".format(key, value.shape))
         pOut.write("Contains sequences:\n")
         for x in ids:
