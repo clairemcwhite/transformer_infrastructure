@@ -1371,7 +1371,9 @@ def get_seq_groups(layers, model_name, seqs, seq_names, logging, padding, exclud
 
     logging.info("Get hidden states")
     print("get hidden states for each seq")
-
+    print("Seqs being embedded")
+    for x in seqs:
+       print(x)
     embedding_dict = embed_sequences(seqs,
                                     model_name,
                                     get_sequence_embeddings = True,
@@ -1389,13 +1391,15 @@ def get_seq_groups(layers, model_name, seqs, seq_names, logging, padding, exclud
 
     padded_seqlen = embedding_dict['aa_embeddings'].shape[1]
     logging.info("Padded sequence length: {}".format(padded_seqlen))
-
-
+    print(embedding_dict['aa_embeddings'].shape)    
+    print(embedding_dict['aa_embeddings'])
     k_select = numseqs 
     sentence_array = np.array(embedding_dict['sequence_embeddings']) 
     s_index = build_index(sentence_array)
     s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
 
+    print(s_distance) 
+    print(s_index2)
     G = graph_from_distindex(s_index2, s_distance)
     print(G)
     G = G.simplify(combine_edges = "first")  # symmetrical, doesn't matter

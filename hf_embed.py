@@ -6,7 +6,7 @@ import pickle
 import argparse
 
 '''
-Get pickle(s) of embeddings for a fasta of protein sequences
+Get pickle of embeddings for a fasta of protein sequences
 with a huggingface transformer model
 
 Can return aa-level, sequence-level, or both
@@ -17,6 +17,19 @@ with open("embeddings.pkl", "rb") as f:
     cache_data = pickle.load(f)
     sequence_embeddings = cache_data['sequence_embeddings']
     aa_embeddings = cache_data['aa_embeddings']
+
+To download a huggingface model locally:
+from transformers import AutoModel, AutoTokenizer
+
+sourcename = "Rostlab/prot_bert_bfd"
+modelname = "prot_bert_bfd"
+outdir = "/scratch/gpfs/cmcwhite/hfmodels/" + modelname
+
+tokenizer = AutoTokenizer.from_pretrained(sourcename)
+tokenizer.save_pretrained(outdir)
+model = AutoModel.from_pretrained(sourcename)
+model.save_pretrained(outdir)
+
 
 Claire D. McWhite
 '''
@@ -35,7 +48,7 @@ def get_embed_args():
     parser.add_argument("-a", "--aa_embeddings", dest = "get_aa_embeddings", type = bool, default = True,
                         help="Whether to get amino-acid embeddings, default: True")
     parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = bool, default = False,
-                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Not needed for sets of complete sequences or domains.")
+                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Not needed for sets of complete sequences or domains that start at the same character.")
 
 
     args = parser.parse_args()
@@ -151,7 +164,7 @@ def get_encodings(seqs, model_path):
     Takes:
        model_path (str): Path to a particular transformer model
                          ex. "prot_bert_bfd"
-       sequences (list): List of sequences with a space between each acids.  
+       sequences (list): List of sequences with a space between each amino acid.  
                          ex ["M E T", "S E Q"]
  
    '''
@@ -166,7 +179,7 @@ def get_encodings(seqs, model_path):
 
 
 
-def embed_sequences(seqs, model_path, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, 1], padding = ""):
+def embed_sequences(seqs, model_path, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, -1], padding = ""):
     '''
     Get a pkl of embeddings for a list of sequences using a particular model
     Embeddings
