@@ -48,7 +48,7 @@ def get_embed_args():
     parser.add_argument("-a", "--aa_embeddings", dest = "get_aa_embeddings", type = bool, default = True,
                         help="Whether to get amino-acid embeddings, default: True")
     parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = bool, default = True,
-                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Potentially not needed for sets of complete sequences or domains that start at the same character.")
+                        help="Default: True. Add if using unaligned sequence fragments (to reduce first and last character effects). Potentially not needed for sets of complete sequences or domains that start at the same character.")
 
 
     args = parser.parse_args()
