@@ -43,7 +43,7 @@ model = AutoModel.from_pretrained(sourcename)
 model.save_pretrained(outdir)
 
 #### Minimal anaconda environment
-conda create --name hf-transformers -c conda-forge -c pytorch transformers pytorch::pytorch pandas numpy biopython
+conda create --name hf-transformers -c conda-forge -c pytorch transformers pytorch::pytorch numpy biopython
 
 Claire D. McWhite
 7/8/20
