@@ -11,14 +11,22 @@ with a huggingface transformer model
 
 Can return aa-level, sequence-level, or both
 
-To load a pre-computed embedding:
+#### Pickle shapes
+pickle['aa_embeddings']:  (numseqs x longest seqlength x (1024 * numlayers)
+pickle['sequence_embeddings']: (numseqs x 1024)
 
-with open("embeddings.pkl", "rb") as f:
-    cache_data = pickle.load(f)
-    sequence_embeddings = cache_data['sequence_embeddings']
-    aa_embeddings = cache_data['aa_embeddings']
+#### Example command
+ python transformer_infrastructure/hf_embed.py -m /scratch/gpfs/cmcwhite/prot_bert_bfd/ -f tester.fasta -o test.pkl
 
-To download a huggingface model locally:
+#### To load a pre-computed embedding:
+
+ with open("embeddings.pkl", "rb") as f:
+     cache_data = pickle.load(f)
+     sequence_embeddings = cache_data['sequence_embeddings']
+     aa_embeddings = cache_data['aa_embeddings']
+
+#### To download a huggingface model locally:
+
 from transformers import AutoModel, AutoTokenizer
 
 sourcename = "Rostlab/prot_bert_bfd"
@@ -30,10 +38,11 @@ tokenizer.save_pretrained(outdir)
 model = AutoModel.from_pretrained(sourcename)
 model.save_pretrained(outdir)
 
-Ex. command
-python transformer_infrastructure/hf_embed.py -m /scratch/gpfs/cmcwhite/prot_bert_bfd/ -f tester.fasta -o test.pkl
+#### Minimal anaconda environment
+conda create --name hf-transformers -c conda-forge -c pytorch transformers pytorch::pytorch pandas numpy biopython
 
 Claire D. McWhite
+7/8/20
 '''
 
 def get_embed_args():
@@ -244,7 +253,7 @@ if __name__ == "__main__":
 
 
 
-# Would like to use SentenceTransformers GPU parallelization, but only currently can do sequence embeddings
+# Would like to use SentenceTransformers GPU parallelization, but only currently can do sequence embeddings. Need to do adapt it
 #def embed_sequences(model_path, sequences, extra_padding,  pkl_out):
 #    '''
 #    

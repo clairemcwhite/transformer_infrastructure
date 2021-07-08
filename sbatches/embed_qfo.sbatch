@@ -21,6 +21,6 @@ nvidia-smi
 
 python -m torch.utils.collect_env
 
-python transformer_infrastructure/hf_embed.py -m /home/cmcwhite/prot_bert_bfd -f /scratch/gpfs/cmcwhite/qfo_2020/qfo_2020.fasta -op /scratch/gpfs/cmcwhite/qfo_2020/qfo_2020.pkl -os /scratch/gpfs/cmcwhite/qfo_2020/qfo_2020.csv
+python transformer_infrastructure/hf_embed.py -m /home/cmcwhite/prot_bert_bfd -f /scratch/gpfs/cmcwhite/qfo_2020/qfo_2020.fasta -o /scratch/gpfs/cmcwhite/qfo_2020/qfo_2020.pkl 
 
 
