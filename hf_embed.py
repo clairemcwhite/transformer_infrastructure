@@ -25,6 +25,10 @@ pickle['sequence_embeddings']: (numseqs x 1024)
      sequence_embeddings = cache_data['sequence_embeddings']
      aa_embeddings = cache_data['aa_embeddings']
 
+#### extra_adding argument
+Adding 5 X's to the beginning and end of each sequence seems to improve embeddings
+I'd be interested in feedback with this parameter set to True or False
+
 #### To download a huggingface model locally:
 
 from transformers import AutoModel, AutoTokenizer
@@ -60,13 +64,14 @@ def get_embed_args():
                         help="Whether to get amino-acid embeddings, default: True")
     parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = bool, default = True,
                         help="Add if using unaligned sequence fragments (to reduce first and last character effects). Potentially not needed for sets of complete sequences or domains that start at the same character, default: True")
-
+    parser.add_argument("-t", "--truncate", dest = "truncate", type = int, required = False,
+                        help= "Optional: Truncate all sequences to this length")
 
     args = parser.parse_args()
     
     return(args)
 
-def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = True):
+def parse_fasta_for_embed(fasta_path, truncate = None, extra_padding = True):
    ''' 
    Load a fasta of protein sequences and
      add a space between each amino acid in sequence (needed to compute embeddings)
@@ -85,14 +90,14 @@ def parse_fasta_for_embed(fasta_path, truncate = "", extra_padding = True):
    for record in SeqIO.parse(fasta_path, "fasta"):
        
        seq = record.seq
-       if truncate:
-           seq = seq[0:truncate]
 
        #if extra_padding == True: 
        #    seq = "XXXXX{}XXXXX".format(seq)
-
-       seq_spaced = seq_spaced =  " ".join(seq)
-
+       if truncate:
+          print("truncating to {}".format(truncate))
+          seq = seq[0:truncate]
+ 
+       seq_spaced =  " ".join(seq)
        # 5 X's seems to be a good amount of neutral padding
        if extra_padding == True:
             padding_aa = " X" * 5
@@ -145,7 +150,7 @@ def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""
     aa_embeddings = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
     if padding:
         aa_embeddings = aa_embeddings[:,padding:-padding,:]
-
+        print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
     return(aa_embeddings)
 
 
@@ -155,6 +160,7 @@ def retrieve_sequence_embeddings(model_output, encoded):
     Return shape (numseqs x 1024)
     '''
     sentence_embeddings = mean_pooling(model_output, encoded['attention_mask'])
+    print('sentence_embeddings.shape: {}'.format(sentence_embeddings.shape))
     return(sentence_embeddings)
 
 
@@ -194,7 +200,7 @@ def get_encodings(seqs, model_path):
 
 
 
-def embed_sequences(seqs, model_path, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, -1], padding = ""):
+def embed_sequences(seqs, model_path, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, -1], extra_padding = True):
     '''
     Get a pkl of embeddings for a list of sequences using a particular model
     Embeddings
@@ -203,11 +209,13 @@ def embed_sequences(seqs, model_path, get_sequence_embeddings = True, get_aa_emb
  
     '''
     model_output, encoded = get_encodings(seqs, model_path)
-
     embedding_dict = {}
     if get_sequence_embeddings:
          sequence_embeddings = retrieve_sequence_embeddings(model_output, encoded)
          embedding_dict['sequence_embeddings'] = sequence_embeddings
+
+    if extra_padding:
+           padding = 5
 
     if get_aa_embeddings:
          aa_embeddings = retrieve_aa_embeddings(model_output, layers = layers, padding = padding)
@@ -225,15 +233,16 @@ if __name__ == "__main__":
 
     args = get_embed_args()
     #print(args.fasta_path, args.extra_padding)
-    ids, sequences, sequences_spaced = parse_fasta_for_embed(args.fasta_path, args.extra_padding)
-  
+    ids, sequences, sequences_spaced = parse_fasta_for_embed(fasta_path = args.fasta_path, 
+                                                             truncate = args.truncate, 
+                                                             extra_padding = args.extra_padding)
 
     #print(sequences_spaced)
     embedding_dict = embed_sequences(sequences_spaced, 
                                     args.model_path, 
                                     get_sequence_embeddings = args.get_sequence_embeddings, 
                                     get_aa_embeddings = args.get_aa_embeddings, 
-                                    padding = args.extra_padding)
+                                    extra_padding = args.extra_padding)
   
    
     #Store sequences & embeddings on disk
