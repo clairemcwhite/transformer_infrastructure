@@ -1,5 +1,6 @@
 #from sentence_transformers import SentenceTransformer, models
 from transformers import AutoTokenizer, AutoModel
+from transformer_infrastructure.pca_embeddings import xxx
 import torch
 from Bio import SeqIO
 import pickle
@@ -10,6 +11,8 @@ Get pickle of embeddings for a fasta of protein sequences
 with a huggingface transformer model
 
 Can return aa-level, sequence-level, or both
+
+Optional to do PCA on embeddings prior to saving, or use pre-trained PCA matrix on them. 
 
 #### Pickle shapes
 pickle['aa_embeddings']:  (numseqs x longest seqlength x (1024 * numlayers)
@@ -66,6 +69,10 @@ def get_embed_args():
                         help="Add if using unaligned sequence fragments (to reduce first and last character effects). Potentially not needed for sets of complete sequences or domains that start at the same character, default: True")
     parser.add_argument("-t", "--truncate", dest = "truncate", type = int, required = False,
                         help= "Optional: Truncate all sequences to this length")
+    parser.add_argument("-d", "--pca_target_dim", dest = "target_dim", type = int, required = False,
+                        help= "Optional: Run a PCA on all embeddings with target n dimensions prior to saving")
+    parser.add_argument("-pm", "--pretrained_pcamatrix_pkl", dest = "pretrained_pcamatrix", type = str, required = False,
+                        help= "Optional: Use a pretrained PCA matrix to reduce dimensions of embeddings (pickle file with objects pcamatrix and bias")
 
     args = parser.parse_args()
     

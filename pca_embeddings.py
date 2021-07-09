@@ -5,7 +5,7 @@ import numpy as np
 
 '''
 Do dimension reduction on a pkl of embeddings (either sequence or aa)
-Reduces the final dimension in array, saves pca transform matrix + bias
+Reduces the final dimension in array, saves pca transform arrays.
 Ex. 4096 -> 100
 
 Works directly on output of hf_embed.py
@@ -14,33 +14,34 @@ A pickle of saved pca matrix + bias can also be applied to new embeddings with t
 
 #### Example use cases
 1. Train a new PCA on all aa_embeddings and apply to all embeddings, saving pickle of pca matrix for later
-$  python transformer_infrastructure/pca_embeddings.py -p test.pkl -o test_dimreduced.pkl -t 100 -e aa_embeddings -om test.pca.matrixbias.pkl
+$  python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -t 100 -e aa_embeddings -om test.pca.matrixbias.pkl
 
 2. Train a new PCA on subset of 100000 sentence_embeddings and apply that pca to all embeddings
-$  python transformer_infrastructure/pca_embeddings.py -p test.pkl -o test_dimreduced.pkl -t 100 -e sequence_embeddings -s 100000
+$  python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -t 100 -e sequence_embeddings -s 100000
 
 3. Apply an old PCA training  (saved with -om on previous run)
-$  python transformer_infrastructure/pca_embeddings.py -p test.pkl -o test_dimreduced.pkl -e sequence_embeddings -im test.pca.matrixbias.pkl
+$  python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -e sequence_embeddings -im test.pca.matrixbias.pkl
 
 4. Just train a PCA, don't apply it
-$  python transformer_infrastructure/pca_embeddings.py -p test.pkl -e sequence_embeddings -om test.pca.matrixbias.pkl
+$  python transformer_infrastructure/embedding_pca.py -p test.pkl -e sequence_embeddings -om test.pca.matrixbias.pkl
 
 
 #### Plotting principal components
-    with open('pkl_out', "rb") as f:      
-        cache_emb = pickle.load(f)
-        tr = cache_emb['aa_embeddings']
+    with open('pkl_out', "rb") as f:
+      
+         cache_emb = pickle.load(f)
+         tr = cache_emb['pcamatrix']p
 
-     plt.scatter(tr[:,0], tr[:, 1],
-     c=I_list, edgecolor='none', alpha=0.5,
-     cmap=plt.cm.get_cmap('jet', k))
-     plt.xlabel('component 1')
-     plt.ylabel('component 2')
-     plt.colorbar()
+         plt.scatter(tr[:,0], tr[:, 1],
+         c=I_list, edgecolor='none', alpha=0.5,
+         cmap=plt.cm.get_cmap('jet', k))
+         plt.xlabel('component 1')
+        plt.ylabel('component 2')
+    plt.colorbar()
 
-     plt.plot(tr[:, 0], tr[:, 1])
+    plt.plot(tr[:, 0], tr[:, 1])
 
-     plt.savefig("pca.png")
+    plt.savefig("pca.png")
 
 
 ##### Minimal anaconda environment 
@@ -140,63 +141,90 @@ def apply_pca(hidden_states, pcamatrix, bias):
     print(reduced)
     return(reduced)
 
+def load_pcamatrix(pkl_pca_in):
+    with open(args.pkl_pca_in, "rb") as f:
+        cache_pca = pickle.load(f)
+        pcamatrix = cache_pca['pcamatrix']
+        bias = cache_pca['bias']
+
+
+    return pcamatrix, bias
+
+
+def save_pcamatrix(pcamatrix, bias, pkl_pca_out):
+    with open(args.pkl_pca_out, "wb") as o:
+        pickle.dump({'bias': bias, 'pcamatrix':pcamatrix }, o, protocol=pickle.HIGHEST_PROTOCOL)
+   
+    pkl_pca_log = "{}.description".format(args.pkl_pca_out)
+    with open(pkl_pca_log, "w") as pout:
+        pout.write("Contains objects 'bias' and 'pcamatrix'\n Apply with 'np.array(hidden_states) @ pcamatrix.T + bias'")
+
+def check_target_dimensions(embeddings, target_dim):
+        if embeddings.shape[0] < target_dim:
+             print("Error: Target dimensions must be smaller than number of embeddings, {} is less than {}".format(embeddings.shape[0], target_dim))
+             exit()
+
+def save_embeddings(pkl_out, embedding_name, embeddings_reduced):
+
+   with open(pkl_out, "wb") as o:
+       pickle.dump({embedding_name:embeddings_reduced}, o, protocol=pickle.HIGHEST_PROTOCOL)
+
+   pkl_out_log = "{}.description".format(pkl_out)
+   with open(pkl_out_log, "w") as pout:
+        pout.write("Post PCA object {} dimensions: {}\n".format(embedding_name, embeddings_reduced.shape))
+
+
+def control_pca(pkl_in, embedding_name, pkl_pca_in = "", pkl_pca_out = "", target_dim = None, max_train_sample_size = None, pkl_out = ""):
+
+
+    with open(pkl_in, "rb") as f:
+        cache_data = pickle.load(f)
+        embeddings = cache_data[embedding_name]
+ 
+    #PCA takes 2d embeddings.
+    if embedding_name == 'aa_embeddings':
+          seqlen = embeddings.shape[1]
+          embeddings = reshape_3d_to_2d(embeddings)
+         
+
+    # If using an already saved PCA matrix + bias, load them in
+    if pkl_pca_in:
+        pcamatrix,bias = load_pcamatrix(pkl_pca_in)
+
+    # Otherwise train a new one (save if filename provided)
+    else:
+        check_target_dimensions(embeddings, target_dim)
+        pcamatrix, bias = train_pca(embeddings, target = target_dim, max_train_sample_size = max_train_sample_size)
+
+        if pkl_pca_out:
+            save_pcamatrix(pcamatrix, bias, pkl_pca_out)
+
+    
+
+    # If outfile for reduced embedding provided, apply pcamatrix + bias and write to file
+    if pkl_out:
+        embeddings_reduced = apply_pca(embeddings, pcamatrix, bias)
+
+        # For aa_embeddings, need convert back to 3d array
+        if embedding_name == 'aa_embeddings':
+            embeddings_reduced = reshape_2d_to_3d(embeddings_reduced, seqlen, target_dim)
+
+        save_embeddings(pkl_out, embedding_name, embeddings_reduced)
+
+    return(embeddings_reduced)
 
 if __name__ == "__main__":
 
 
 
     args = get_pca_args()
-    #print(args.fasta_path, args.extra_padding)
-
-    with open(args.pkl_in, "rb") as f:
-        cache_data = pickle.load(f)
-        embeddings = cache_data[args.embedding_name]
- 
-    #PCA takes 2d embeddings.
-    if args.embedding_name == 'aa_embeddings':
-          seqlen = embeddings.shape[1]
-          embeddings = reshape_3d_to_2d(embeddings)
-         
-
-    # If using an already saved PCA matrix + bias, load them in
-    if args.pkl_pca_in:
-        with open(args.pkl_pca_in, "rb") as f:
-           cache_pca = pickle.load(f)
-           pcamatrix = cache_pca['pcamatrix']
-           bias = cache_pca['bias']
-
-    # Otherwise train a new one (save if filename provided)
-    else:
-
-        if embeddings.shape[0] < args.target_dim:
-             print("Error: Target dimensions must be smaller than number of embeddings, {} is less than {}".format(embeddings.shape[0], args.target_dim))
-             exit()
-
-        pcamatrix, bias = train_pca(embeddings, target = args.target_dim, max_train_sample_size = args.max_train_sample_size)
-        if args.pkl_pca_out:
-            with open(args.pkl_pca_out, "wb") as o:
-                pickle.dump({'bias': bias, 'pcamatrix':pcamatrix }, o, protocol=pickle.HIGHEST_PROTOCOL)
-
-            pkl_pca_log = "{}.description".format(args.pkl_pca_out)
-            with open(pkl_pca_log, "w") as pout:
-                pout.write("Contains objects 'bias' and 'pcamatrix'\n Apply with 'np.array(hidden_states) @ pcamatrix.T + bias'")
-
-    
-
-    # If outfile for reduced embedding provided, apply pcamatrix + bias and write to file
-    if args.pkl_out:
-        embeddings_reduced = apply_pca(embeddings, pcamatrix, bias)
-
-        # For aa_embeddings, need convert back to 3d array
-        if args.embedding_name == 'aa_embeddings':
-            embeddings_reduced = reshape_2d_to_3d(embeddings_reduced, seqlen, args.target_dim)
-
-        with open(args.pkl_out, "wb") as o:
-             pickle.dump({args.embedding_name:embeddings_reduced}, o, protocol=pickle.HIGHEST_PROTOCOL)
-
-        pkl_out_log = "{}.description".format(args.pkl_out)
-        with open(pkl_out_log, "w") as pout:
-              pout.write("Post PCA object {} dimensions: {}\n".format(args.embedding_name, embeddings_reduced.shape))
+    control_pca(args.pkl_in, 
+                args.embedding_name, 
+                pkl_pca_in = args.pkl_pca_in, 
+                pkl_pca_out = args.pkl_pca_out, 
+                target_dim = args.target_dim, 
+                max_train_sample_size = args.max_train_sample_size, 
+                pkl_out = args.pkl_out)
 
 
 
