@@ -12,7 +12,7 @@ from Bio.SeqRecord import SeqRecord
 import faiss
 #import unittest
 fasta = '/scratch/gpfs/cmcwhite/quantest2/QuanTest2/Test/zf-CCHH.vie'
-from sentence_transformers import util
+#from sentence_transformers import util
 #from iteration_utilities import  duplicates
 
 import pickle
@@ -1378,7 +1378,7 @@ def get_seq_groups(layers, model_name, seqs, seq_names, logging, padding, exclud
                                     model_name,
                                     get_sequence_embeddings = True,
                                     get_aa_embeddings = True,
-                                    padding = 5)
+                                    extra_padding = True)
 
     
     #hstates_list, sentence_embeddings = get_hidden_states(seqs, model, tokenizer, layers, return_sentence = True)
