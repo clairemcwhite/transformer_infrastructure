@@ -14,16 +14,16 @@ A pickle of saved pca matrix + bias can also be applied to new embeddings with t
 
 #### Example use cases
 1. Train a new PCA on all aa_embeddings and apply to all embeddings, saving pickle of pca matrix for later
-$  python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -t 100 -e aa_embeddings -om test.pca.matrixbias.pkl
+$  python transformer_infrastructure/pca_embeddings.py -p test.pkl -o test_dimreduced.pkl -t 100 -e aa_embeddings -om test.pca.matrixbias.pkl
 
 2. Train a new PCA on subset of 100000 sentence_embeddings and apply that pca to all embeddings
-$  python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -t 100 -e sequence_embeddings -s 100000
+$  python transformer_infrastructure/pca_embeddings.py -p test.pkl -o test_dimreduced.pkl -t 100 -e sequence_embeddings -s 100000
 
 3. Apply an old PCA training  (saved with -om on previous run)
-$  python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -e sequence_embeddings -im test.pca.matrixbias.pkl
+$  python transformer_infrastructure/pca_embeddings.py -p test.pkl -o test_dimreduced.pkl -e sequence_embeddings -im test.pca.matrixbias.pkl
 
 4. Just train a PCA, don't apply it
-$  python transformer_infrastructure/embedding_pca.py -p test.pkl -e sequence_embeddings -om test.pca.matrixbias.pkl
+$  python transformer_infrastructure/pca_embeddings.py -p test.pkl -e sequence_embeddings -om test.pca.matrixbias.pkl
 
 
 #### Plotting principal components

@@ -1395,6 +1395,9 @@ def get_seq_groups(layers, model_name, seqs, seq_names, logging, padding, exclud
     print(embedding_dict['aa_embeddings'])
     k_select = numseqs 
     sentence_array = np.array(embedding_dict['sequence_embeddings']) 
+
+    # Try with PCA...   
+ 
     s_index = build_index(sentence_array)
     s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
 
