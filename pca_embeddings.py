@@ -5,37 +5,42 @@ import numpy as np
 
 '''
 Do dimension reduction on a pkl of embeddings (either sequence or aa)
+Reduces the final dimension in array, saves pca transform matrix + bias
 Ex. 4096 -> 100
 
-Reduces the final dimension in array, saves pca transform arrays.
-
+Works directly on output of hf_embed.py
+ 
 A pickle of saved pca matrix + bias can also be applied to new embeddings with this script
 
 #### Example use cases
 1. Train a new PCA on all aa_embeddings and apply to all embeddings, saving pickle of pca matrix for later
-python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -t 100 -e aa_embeddings -om test.pca.matrixbias.pkl
+$  python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -t 100 -e aa_embeddings -om test.pca.matrixbias.pkl
 
 2. Train a new PCA on subset of 100000 sentence_embeddings and apply that pca to all embeddings
-python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -t 100 -e sequence_embeddings -s 100000
+$  python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -t 100 -e sequence_embeddings -s 100000
 
 3. Apply an old PCA training  (saved with -om on previous run)
-python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -e sequence_embeddings -im test.pca.matrixbias.pkl
+$  python transformer_infrastructure/embedding_pca.py -p test.pkl -o test_dimreduced.pkl -e sequence_embeddings -im test.pca.matrixbias.pkl
 
 4. Just train a PCA, don't apply it
-python transformer_infrastructure/embedding_pca.py -p test.pkl -e sequence_embeddings -om test.pca.matrixbias.pkl
+$  python transformer_infrastructure/embedding_pca.py -p test.pkl -e sequence_embeddings -om test.pca.matrixbias.pkl
 
 
 #### Plotting principal components
-    plt.scatter(tr[:,0], tr[:, 1],
-            c=I_list, edgecolor='none', alpha=0.5,
-            cmap=plt.cm.get_cmap('jet', k))
-    plt.xlabel('component 1')
-    plt.ylabel('component 2')
-    plt.colorbar()
+    with open('pkl_out', "rb") as f:      
+        cache_emb = pickle.load(f)
+        tr = cache_emb['aa_embeddings']
 
-    plt.plot(tr[:, 0], tr[:, 1])
+     plt.scatter(tr[:,0], tr[:, 1],
+     c=I_list, edgecolor='none', alpha=0.5,
+     cmap=plt.cm.get_cmap('jet', k))
+     plt.xlabel('component 1')
+     plt.ylabel('component 2')
+     plt.colorbar()
 
-    plt.savefig("pca.png")
+     plt.plot(tr[:, 0], tr[:, 1])
+
+     plt.savefig("pca.png")
 
 
 ##### Minimal anaconda environment 
