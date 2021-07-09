@@ -185,6 +185,105 @@ def load_model(model_path):
     return(model, tokenizer)
 
 
+
+def start_multi_process_pool(self, target_devices: List[str] = None):
+    """
+    Starts multi process to process the encoding with several, independent processes.
+    This method is recommended if you want to encode on multiple GPUs. It is advised
+    to start only one process per GPU. This method works together with encode_multi_process
+    :param target_devices: PyTorch target devices, e.g. cuda:0, cuda:1... If None, all available CUDA devices will be used
+    :return: Returns a dict with the target processes, an input queue and and output queue.
+    """
+    if target_devices is None:
+        if torch.cuda.is_available():
+            target_devices = ['cuda:{}'.format(i) for i in range(torch.cuda.device_count())]
+        else:
+            logger.info("CUDA is not available. Start 4 CPU worker")
+            target_devices = ['cpu']*4
+
+    logger.info("Start multi-process pool on devices: {}".format(', '.join(map(str, target_devices))))
+
+    ctx = mp.get_context('spawn')
+    input_queue = ctx.Queue()
+    output_queue = ctx.Queue()
+    processes = []
+
+    for cuda_id in target_devices:
+        p = ctx.Process(target=SentenceTransformer._encode_multi_process_worker, args=(cuda_id, self, input_queue, output_queue), daemon=True)
+        p.start()
+        processes.append(p)
+
+    return {'input': input_queue, 'output': output_queue, 'processes': processes}
+
+
+@staticmethod
+def stop_multi_process_pool(pool):
+    """
+    Stops all processes started with start_multi_process_pool
+    """
+    for p in pool['processes']:
+        p.terminate()
+
+    for p in pool['processes']:
+        p.join()
+        p.close()
+
+    pool['input'].close()
+    pool['output'].close()
+
+
+
+
+def encode_multi_process(model, sentences: List[str], pool: Dict[str, object], batch_size: int = 32, chunk_size: int = None):
+    """
+    This method allows to run encode() on multiple GPUs. The sentences are chunked into smaller packages
+    and sent to individual processes, which encode these on the different GPUs. This method is only suitable
+    for encoding large sets of sentences
+    :param sentences: List of sentences
+    :param pool: A pool of workers started with SentenceTransformer.start_multi_process_pool
+    :param batch_size: Encode sentences with batch size
+    :param chunk_size: Sentences are chunked and sent to the individual processes. If none, it determine a sensible size.
+    :return: Numpy matrix with all embeddings
+    """
+
+    if chunk_size is None:
+        chunk_size = min(math.ceil(len(sentences) / len(pool["processes"]) / 10), 5000)
+
+    # CDM logger.info("Chunk data into packages of size {}".format(chunk_size))
+
+    input_queue = pool['input']
+    last_chunk_id = 0
+    chunk = []
+
+    for sentence in sentences:
+        chunk.append(sentence)
+        if len(chunk) >= chunk_size:
+            input_queue.put([last_chunk_id, batch_size, chunk])
+            last_chunk_id += 1
+            chunk = []
+
+    if len(chunk) > 0:
+        input_queue.put([last_chunk_id, batch_size, chunk])
+        last_chunk_id += 1
+
+    output_queue = pool['output']
+    results_list = sorted([output_queue.get() for _ in range(last_chunk_id)], key=lambda x: x[0])
+    embeddings = np.concatenate([result[1] for result in results_list])
+    return embeddings
+
+@staticmethod
+def _encode_multi_process_worker(target_device: str, model, input_queue, results_queue):
+    """
+    Internal working process to encode sentences in multi-process setup
+    """
+    while True:
+        try:
+            id, batch_size, sentences = input_queue.get()
+            embeddings = model.encode(sentences, device=target_device,  show_progress_bar=False, convert_to_numpy=True, batch_size=batch_size)
+            results_queue.put([id, embeddings])
+        except queue.Empty:
+            break
+
 def get_encodings(seqs, model_path):
     '''
     Encode sequences with a transformer model
@@ -202,6 +301,8 @@ def get_encodings(seqs, model_path):
     encoded = tokenizer.batch_encode_plus(seqs, return_tensors="pt", padding=True)
     with torch.no_grad():
         model_output = model(**encoded)
+    
+
 
     return(model_output, encoded)
 
