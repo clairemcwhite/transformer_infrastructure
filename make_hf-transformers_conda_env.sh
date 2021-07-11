@@ -1,7 +1,7 @@
 module load anaconda3/2020.11
 
 #pytorch has to be from pytorch channel, otherwise CUDA available is False
-conda create --name hf-transformers -c conda-forge -c pytorch transformers pytorch::pytorch pandas numpy biopython faiss seqeval cudatoolkit=10.2 python-igraph matplotlib
+conda create --name hf-transformers -c conda-forge -c pytorch transformers pytorch::pytorch pandas numpy biopython faiss seqeval cudatoolkit=10.2 python-igraph matplotlib awkward numba
 
 conda activate hf-transformers
 

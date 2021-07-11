@@ -1,10 +1,16 @@
 #from sentence_transformers import SentenceTransformer, models
 from transformers import AutoTokenizer, AutoModel
-from transformer_infrastructure.pca_embeddings import xxx
+#from transformer_infrastructure.pca_embeddings import xxx
 import torch
+import torch.nn as nn
 from Bio import SeqIO
 import pickle
 import argparse
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
+import numba as nb
+import awkward as ak
+import time
 
 '''
 Get pickle of embeddings for a fasta of protein sequences
@@ -14,9 +20,30 @@ Can return aa-level, sequence-level, or both
 
 Optional to do PCA on embeddings prior to saving, or use pre-trained PCA matrix on them. 
 
-#### Pickle shapes
+#### Default pickle shapes
 pickle['aa_embeddings']:  (numseqs x longest seqlength x (1024 * numlayers)
 pickle['sequence_embeddings']: (numseqs x 1024)
+
+
+### --use_ragged_arrays
+Amino acid embeddings are by default save in a numpy array of dimensions 
+   pickle['aa_embeddings']:  (numseqs x longest seqlength x (1024 * numlayers)
+
+The package `awkward` allows saving of arrays of different lengths. 
+If all sequences are around the same lengths, there's not much different
+However, one long sequence can greatly increase file sizes.
+For a set of 50 ~300aa sequence + one 5000aa sequence, there's a tenfold difference in file size. 
+
+3.9G test_np.pkl
+369M test_awkward.pkl
+
+### PCA
+Another route to smaller file size is training a PCA transform to reduced dimensionality.
+It can either be applied to sequence or amino acid embeddings. 
+
+Previously trained PCA matrices can be used as well.
+
+
 
 #### Example command
  python transformer_infrastructure/hf_embed.py -m /scratch/gpfs/cmcwhite/prot_bert_bfd/ -f tester.fasta -o test.pkl
@@ -28,7 +55,8 @@ pickle['sequence_embeddings']: (numseqs x 1024)
      sequence_embeddings = cache_data['sequence_embeddings']
      aa_embeddings = cache_data['aa_embeddings']
 
-#### extra_adding argument
+
+#### extra_padding argument
 Adding 5 X's to the beginning and end of each sequence seems to improve embeddings
 I'd be interested in feedback with this parameter set to True or False
 
@@ -73,6 +101,8 @@ def get_embed_args():
                         help= "Optional: Run a PCA on all embeddings with target n dimensions prior to saving")
     parser.add_argument("-pm", "--pretrained_pcamatrix_pkl", dest = "pretrained_pcamatrix", type = str, required = False,
                         help= "Optional: Use a pretrained PCA matrix to reduce dimensions of embeddings (pickle file with objects pcamatrix and bias")
+    parser.add_argument("-r", "--use_ragged_arrays", dest = "ragged_arrays", action = "store_true", required = False,
+                        help= "Optional: Use package 'awkward' to save ragged arrays fo amino acid embeddings")
 
     args = parser.parse_args()
     
@@ -158,7 +188,7 @@ def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""
     if padding:
         aa_embeddings = aa_embeddings[:,padding:-padding,:]
         print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
-    return(aa_embeddings)
+    return(aa_embeddings, aa_embeddings.shape)
 
 
 def retrieve_sequence_embeddings(model_output, encoded):
@@ -184,8 +214,48 @@ def load_model(model_path):
 
     return(model, tokenizer)
 
+# ? 
+class Collate:
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
 
-def get_encodings(seqs, model_path):
+    def __call__(self, batch):
+        encoding = self.tokenizer.batch_encode_plus(
+            list(batch),
+            return_tensors  = 'pt', 
+            padding = True
+            
+        )
+        return(encoding)
+
+# ?
+# Start trying to reduce these
+class ListDataset(Dataset):
+    def __init__(self, data):
+        self.data = data
+
+    def __getitem__(self, index):
+        return self.data[index]
+
+    def __len__(self):
+        return len(self.data)
+
+
+@nb.jit
+def make_direct(input, lengths, builder):
+    '''
+    Allows trimming ragged array to the actual sequence lengths
+    No unnecessary embedding vectors saved
+    From jpivarski
+    https://github.com/scikit-hep/awkward-1.0/issues/480#issuecomment-703740986
+    ''' 
+
+    for i in range(len(lengths)):
+         builder.append(input[i][:lengths[i]])
+    return builder
+
+
+def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, -1], padding = 5, ragged_arrays = False):
     '''
     Encode sequences with a transformer model
 
@@ -196,43 +266,106 @@ def get_encodings(seqs, model_path):
                          ex ["M E T", "S E Q"]
  
    '''
- 
+
+    ak.numba.register()
+    print("CUDA available?", torch.cuda.is_available())
+
     model, tokenizer = load_model(model_path)
-    
-    encoded = tokenizer.batch_encode_plus(seqs, return_tensors="pt", padding=True)
+
+
+
+    aa_shapes = [] 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("device", device) 
+    device_ids =list(range(0, torch.cuda.device_count()))
+    print("device_ids", device_ids)
+    if torch.cuda.device_count() > 1:
+       print("Let's use", torch.cuda.device_count(), "GPUs!")
+       #model = nn.DataParallel(model)
+       model = nn.DataParallel(model, device_ids=device_ids).cuda()
+       #model.to(device_ids) 
+
+    else:
+       model = model.to(device)
+
+    # Definitly needs to be batched, otherwise GPU memory errors
+    batch_size = torch.cuda.device_count()
+
+    collate = Collate(tokenizer=tokenizer)
+
+    data_loader = DataLoader(dataset=ListDataset(seqs),
+                      batch_size=batch_size,
+                      shuffle=False,
+                      collate_fn=collate,
+                      pin_memory=False)
+    start = time.time()
+
+    # Need to concatate output of each chunk
+    sentence_array_list = []
+    aa_array_list = []
+#
+#    aa_builder = ak.ArrayBuilder()
+
+    # Using awkward arrays for amino acids because sequence lengths are variable
+    # If 10,000 long sequence was used, all sequences would be padded to 10,000
+    # Awkward arrays allow concatenating ragged arrays
+    count = 0
+    maxlen = max(seqlens)
     with torch.no_grad():
-        model_output = model(**encoded)
 
-    return(model_output, encoded)
-
-
-
-def embed_sequences(seqs, model_path, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, -1], extra_padding = True):
-    '''
-    Get a pkl of embeddings for a list of sequences using a particular model
-    Embeddings
-
-      pkl_out (str) : Filename of output pickle of embeddings
+        # For each chunk of data
+        for data in data_loader:
+            input = data.to(device)
+            # DataParallel model splits data to the different devices and gathers back
+            # nvidia-smi shows 4 active devices (when there are 4 GPUs)
+            model_output = model(**input)
  
-    '''
-    model_output, encoded = get_encodings(seqs, model_path)
-    embedding_dict = {}
-    if get_sequence_embeddings:
-         sequence_embeddings = retrieve_sequence_embeddings(model_output, encoded)
-         embedding_dict['sequence_embeddings'] = sequence_embeddings
+            # Do final processing here. 
+            if True:
+                sentence_embeddings = mean_pooling(model_output, data['attention_mask'])
+                sentence_embeddings = sentence_embeddings.to('cpu')
+                sentence_array_list.append(sentence_embeddings)
+ 
+            if True:
+                aa_embeddings, aa_shape = retrieve_aa_embeddings(model_output, layers = layers, padding = padding)
+                aa_embeddings = aa_embeddings.to('cpu')
+                aa_embeddings = np.array(aa_embeddings)
+                # Trim each down to just its sequence length
+                if ragged_arrays == True:
+                    for j in range(len(aa_embeddings)):
+                         seqindex = (20 * count) + j
+                         print(count, j, seqindex, seqlens[seqindex])
+                         print(aa_embeddings[j])
+                         aa_embed_trunc = aa_embeddings[j][:seqlens[seqindex], :]
+                    
+                         aa_embed_ak = ak.Array(aa_embed_trunc)
+                         aa_array_list.append(aa_embed_ak)
+               
+                else:
+                    # If not using ragged arrays, must pad to same dim as longest sequence
+                    print(maxlen - (aa_embeddings.shape[1] - 1))
+                    npad = ((0,0), (0, maxlen - (aa_embeddings.shape[1] - 1)), (0,0))
+                    aa_embeddings = np.pad(aa_embeddings, npad)
+                    aa_array_list.append(aa_embeddings)
 
-    if extra_padding:
-           padding = 5
-
-    if get_aa_embeddings:
-         aa_embeddings = retrieve_aa_embeddings(model_output, layers = layers, padding = padding)
-         embedding_dict['aa_embeddings'] = aa_embeddings
+        end = time.time() 
+        print("Total time to embed = {}".format(end - start))
+  
+        count = count + 1
+        ak_aa =np.concatenate(aa_array_list)
+ 
         
-   
-    return(embedding_dict)
+        lengths = np.array(seqlens)
+
+        # Trim each aa embedding to only the aa's in the original sequences
+        #ak_aa = make_direct(ak_aa, lengths, ak.ArrayBuilder()).snapshot()
+
+        embedding_dict = {}
+        embedding_dict['sequence_embeddings'] = np.concatenate(sentence_array_list)
+        embedding_dict['aa_embeddings'] = ak_aa
 
 
-
+        return(embedding_dict)
 
     
 
@@ -244,12 +377,21 @@ if __name__ == "__main__":
                                                              truncate = args.truncate, 
                                                              extra_padding = args.extra_padding)
 
+    seqlens = [len(x) for x in sequences]
+ 
+    if args.extra_padding:
+       padding = 5
+
+    else: 
+       padding = 0
     #print(sequences_spaced)
-    embedding_dict = embed_sequences(sequences_spaced, 
+    embedding_dict = get_embeddings(sequences_spaced, 
                                     args.model_path, 
                                     get_sequence_embeddings = args.get_sequence_embeddings, 
                                     get_aa_embeddings = args.get_aa_embeddings, 
-                                    extra_padding = args.extra_padding)
+                                    padding = padding, 
+                                    seqlens = seqlens,
+                                    ragged_arrays = args.ragged_arrays)
   
    
     #Store sequences & embeddings on disk
@@ -258,10 +400,20 @@ if __name__ == "__main__":
 
     pkl_log = "{}.description".format(args.pkl_out)
     with open(pkl_log, "w") as pOut:
-        for key, value in embedding_dict.items():
-             #print(key)
-             #print(value)
-             pOut.write("Object {} dimensions: {}\n".format(key, value.shape))
+        pOut.write("Object {} dimensions: {}\n".format('sequence_embeddings', embedding_dict['sequence_embeddings'].shape))
+
+        if args.ragged_arrays == True:
+            pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].type))
+            pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
+            pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
+    
+            pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=0)))
+            pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=1)))
+        # Else it's a square numpy array
+        else:
+            pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].shape))
+           
+
         pOut.write("Contains sequences:\n")
         for x in ids:
           pOut.write("{}\n".format(x))
