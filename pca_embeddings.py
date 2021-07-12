@@ -152,10 +152,10 @@ def load_pcamatrix(pkl_pca_in):
 
 
 def save_pcamatrix(pcamatrix, bias, pkl_pca_out):
-    with open(args.pkl_pca_out, "wb") as o:
-        pickle.dump({'bias': bias, 'pcamatrix':pcamatrix }, o, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(pkl_pca_out, "wb") as o:
+        pickle.dump({'bias': bias, 'pcamatrix': pcamatrix }, o, protocol=pickle.HIGHEST_PROTOCOL)
    
-    pkl_pca_log = "{}.description".format(args.pkl_pca_out)
+    pkl_pca_log = "{}.description".format(pkl_pca_out)
     with open(pkl_pca_log, "w") as pout:
         pout.write("Contains objects 'bias' and 'pcamatrix'\n Apply with 'np.array(hidden_states) @ pcamatrix.T + bias'")
 
@@ -174,13 +174,10 @@ def save_embeddings(pkl_out, embedding_name, embeddings_reduced):
         pout.write("Post PCA object {} dimensions: {}\n".format(embedding_name, embeddings_reduced.shape))
 
 
-def control_pca(pkl_in, embedding_name, pkl_pca_in = "", pkl_pca_out = "", target_dim = None, max_train_sample_size = None, pkl_out = ""):
+def control_pca(embedding_dict, embedding_name, pkl_pca_in = "", pkl_pca_out = "", target_dim = None, max_train_sample_size = None, pkl_out = ""):
 
 
-    with open(pkl_in, "rb") as f:
-        cache_data = pickle.load(f)
-        embeddings = cache_data[embedding_name]
- 
+    embeddings = embedding_dict[embedding_name] 
     #PCA takes 2d embeddings.
     if embedding_name == 'aa_embeddings':
           seqlen = embeddings.shape[1]
@@ -218,7 +215,11 @@ if __name__ == "__main__":
 
 
     args = get_pca_args()
-    control_pca(args.pkl_in, 
+
+    with open(args.pkl_in, "rb") as f:
+        embedding_dict = pickle.load(f)
+
+    control_pca(embedding_dict,
                 args.embedding_name, 
                 pkl_pca_in = args.pkl_pca_in, 
                 pkl_pca_out = args.pkl_pca_out, 

@@ -1,6 +1,6 @@
 #from sentence_transformers import SentenceTransformer, models
 from transformers import AutoTokenizer, AutoModel
-#from transformer_infrastructure.pca_embeddings import xxx
+from transformer_infrastructure.pca_embeddings import control_pca
 import torch
 import torch.nn as nn
 from Bio import SeqIO
@@ -8,7 +8,7 @@ import pickle
 import argparse
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
-import numba as nb
+#import numba as nb
 import awkward as ak
 import time
 
@@ -87,8 +87,8 @@ def get_embed_args():
                         help="Model directory Ex. /path/to/model_dir")
     parser.add_argument("-f", "--fasta", dest = "fasta_path", type = str, required = True,
                         help="path to a fasta of protein sequences")
-    parser.add_argument("-o", "--outpickle", dest = "pkl_out", type = str, required = True,
-                        help="output .pkl filename")
+    parser.add_argument("-o", "--outpickle", dest = "pkl_out", type = str, required = False,
+                        help="Optional: output .pkl filename to save embeddings in")
     parser.add_argument("-s", "--sequence_embeddings", dest = "get_sequence_embeddings", type = bool, default = True,
                         help="Whether to get sequence embeddings, default: True")
     parser.add_argument("-a", "--aa_embeddings", dest = "get_aa_embeddings", type = bool, default = True,
@@ -97,10 +97,14 @@ def get_embed_args():
                         help="Add if using unaligned sequence fragments (to reduce first and last character effects). Potentially not needed for sets of complete sequences or domains that start at the same character, default: True")
     parser.add_argument("-t", "--truncate", dest = "truncate", type = int, required = False,
                         help= "Optional: Truncate all sequences to this length")
-    parser.add_argument("-d", "--pca_target_dim", dest = "target_dim", type = int, required = False,
-                        help= "Optional: Run a PCA on all embeddings with target n dimensions prior to saving")
-    parser.add_argument("-pm", "--pretrained_pcamatrix_pkl", dest = "pretrained_pcamatrix", type = str, required = False,
-                        help= "Optional: Use a pretrained PCA matrix to reduce dimensions of embeddings (pickle file with objects pcamatrix and bias")
+    parser.add_argument("-ad", "--aa_target_dim", dest = "aa_target_dim", type = int, required = False,
+                        help= "Optional: Run a new PCA on all amino acid embeddings with target n dimensions prior to saving")
+    parser.add_argument("-am", "--aa_pcamatrix_pkl", dest = "aa_pcamatrix", type = str, required = False,
+                        help= "Optional: Use a pretrained PCA matrix to reduce dimensions of amino acid embeddings (pickle file with objects pcamatrix and bias")
+    parser.add_argument("-sd", "--sequence_target_dim", dest = "sequence_target_dim", type = int, required = False,
+                        help= "Optional: Run a new PCA on all sequence embeddings with target n dimensions prior to saving")
+    parser.add_argument("-sm", "--seq_pcamatrix_pkl", dest = "sequence_pcamatrix", type = str, required = False,
+                        help= "Optional: Use a pretrained PCA matrix to reduce dimensions of amino acid embeddings (pickle file with objects pcamatrix and bias")
     parser.add_argument("-r", "--use_ragged_arrays", dest = "ragged_arrays", action = "store_true", required = False,
                         help= "Optional: Use package 'awkward' to save ragged arrays fo amino acid embeddings")
 
@@ -241,18 +245,18 @@ class ListDataset(Dataset):
         return len(self.data)
 
 
-@nb.jit
-def make_direct(input, lengths, builder):
-    '''
-    Allows trimming ragged array to the actual sequence lengths
-    No unnecessary embedding vectors saved
-    From jpivarski
-    https://github.com/scikit-hep/awkward-1.0/issues/480#issuecomment-703740986
-    ''' 
-
-    for i in range(len(lengths)):
-         builder.append(input[i][:lengths[i]])
-    return builder
+#@nb.jit
+#def make_direct(input, lengths, builder):
+#    '''
+#    Allows trimming ragged array to the actual sequence lengths
+#    No unnecessary embedding vectors saved
+#    From jpivarski
+#    https://github.com/scikit-hep/awkward-1.0/issues/480#issuecomment-703740986
+#    ''' 
+#
+#    for i in range(len(lengths)):
+#         builder.append(input[i][:lengths[i]])
+#    return builder
 
 
 def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, -1], padding = 5, ragged_arrays = False):
@@ -392,35 +396,69 @@ if __name__ == "__main__":
                                     padding = padding, 
                                     seqlens = seqlens,
                                     ragged_arrays = args.ragged_arrays)
-  
-   
+
+    # Reduce sequence dimension with a new pca transform 
+    if args.sequence_target_dim:
+       pkl_pca_out = "{}.sequence.{}dim.pcamatrix.pkl".format(args.pkl_in, args.sequence_target_dim)
+       embedding_dict['sequence_embeddings'] =  control_pca(embedding_dict, 
+                                                'sequence_embeddings', 
+                                                pkl_pca_out = pkl_pca_out, 
+                                                target_dim = args.sequence_target_dim, 
+                                                max_train_sample_size = None)
+
+    # Reduce aa dimension with a new pca transform 
+    if args.aa_target_dim:
+       pkl_pca_out = "{}.aa.{}dim.pcamatrix.pkl".format(args.pkl_in, args.aa_target_dim)
+       embedding_dict['aa_embeddings'] =  control_pca(embedding_dict, 
+                                                'aa_embeddings', 
+                                                pkl_pca_out = pkl_pca_out, 
+                                                target_dim = args.aa_target_dim, 
+                                                max_train_sample_size = None)
+
+    # Reduce sequence dimension with previous pca transform
+    if args.sequence_pcamatrix:
+       embedding_dict['sequence_embeddings'] =  control_pca(embedding_dict, 
+                                                'sequence_embeddings', 
+                                                pkl_pca_in = args.sequence_pcamatrix) 
+
+    # Reduce aa dimension with previous pca transform
+    if args.aa_pcamatrix:
+       embedding_dict['aa_embeddings'] =  control_pca(embedding_dict, 
+                                                'aa_embeddings', 
+                                                pkl_pca_in = args.aa_pcamatrix) 
+
+
+
+             
     #Store sequences & embeddings on disk
-    with open(args.pkl_out, "wb") as fOut:
-       pickle.dump(embedding_dict, fOut, protocol=pickle.HIGHEST_PROTOCOL)
+    if args.pkl_out:
 
-    pkl_log = "{}.description".format(args.pkl_out)
-    with open(pkl_log, "w") as pOut:
-        pOut.write("Object {} dimensions: {}\n".format('sequence_embeddings', embedding_dict['sequence_embeddings'].shape))
-
-        if args.ragged_arrays == True:
-            pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].type))
-            pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
-            pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
+        with open(args.pkl_out, "wb") as fOut:
+           pickle.dump(embedding_dict, fOut, protocol=pickle.HIGHEST_PROTOCOL)
     
-            pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=0)))
-            pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=1)))
-        # Else it's a square numpy array
-        else:
-            pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].shape))
-           
-
-        pOut.write("Contains sequences:\n")
-        for x in ids:
-          pOut.write("{}\n".format(x))
-
-
-
-
+        pkl_log = "{}.description".format(args.pkl_out)
+        with open(pkl_log, "w") as pOut:
+            pOut.write("Object {} dimensions: {}\n".format('sequence_embeddings', embedding_dict['sequence_embeddings'].shape))
+    
+            if args.ragged_arrays == True:
+                pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].type))
+                pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
+                pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
+        
+                pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=0)))
+                pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=1)))
+            # Else it's a square numpy array
+            else:
+                pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].shape))
+               
+    
+            pOut.write("Contains sequences:\n")
+            for x in ids:
+              pOut.write("{}\n".format(x))
+    
+    
+    
+    
 # Would like to use SentenceTransformers GPU parallelization, but only currently can do sequence embeddings. Need to do adapt it
 #def embed_sequences(model_path, sequences, extra_padding,  pkl_out):
 #    '''
