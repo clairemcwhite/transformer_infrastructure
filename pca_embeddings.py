@@ -208,7 +208,7 @@ def control_pca(embedding_dict, embedding_name, pkl_pca_in = "", pkl_pca_out = "
 
         save_embeddings(pkl_out, embedding_name, embeddings_reduced)
 
-    return(embeddings_reduced)
+        return(embeddings_reduced)
 
 if __name__ == "__main__":
 

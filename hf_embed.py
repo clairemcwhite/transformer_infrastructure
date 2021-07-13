@@ -89,10 +89,10 @@ def get_embed_args():
                         help="path to a fasta of protein sequences")
     parser.add_argument("-o", "--outpickle", dest = "pkl_out", type = str, required = False,
                         help="Optional: output .pkl filename to save embeddings in")
-    parser.add_argument("-s", "--sequence_embeddings", dest = "get_sequence_embeddings", type = bool, default = True,
-                        help="Whether to get sequence embeddings, default: True")
-    parser.add_argument("-a", "--aa_embeddings", dest = "get_aa_embeddings", type = bool, default = True,
-                        help="Whether to get amino-acid embeddings, default: True")
+    parser.add_argument("-s", "--get_sequence_embeddings", dest = "get_sequence_embeddings", action = "store_true",
+                        help="Flag: Whether to get sequence embeddings")
+    parser.add_argument("-a", "--get_aa_embeddings", dest = "get_aa_embeddings", action = "store_true",
+                        help="Flag: Whether to get amino-acid embeddings")
     parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = bool, default = True,
                         help="Add if using unaligned sequence fragments (to reduce first and last character effects). Potentially not needed for sets of complete sequences or domains that start at the same character, default: True")
     parser.add_argument("-t", "--truncate", dest = "truncate", type = int, required = False,
@@ -275,7 +275,7 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
     print("CUDA available?", torch.cuda.is_available())
 
     model, tokenizer = load_model(model_path)
-
+    print("Model loaded?")
 
 
     aa_shapes = [] 
@@ -293,7 +293,10 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
        model = model.to(device)
 
     # Definitly needs to be batched, otherwise GPU memory errors
-    batch_size = torch.cuda.device_count()
+    if torch.cuda.device_count():
+       batch_size = torch.cuda.device_count()
+    else:
+       batch_size = 1
 
     collate = Collate(tokenizer=tokenizer)
 
@@ -315,29 +318,31 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
     # Awkward arrays allow concatenating ragged arrays
     count = 0
     maxlen = max(seqlens)
+    numseqs = len(seqs)
     with torch.no_grad():
 
         # For each chunk of data
         for data in data_loader:
+            print(count * batch_size, numseqs)
             input = data.to(device)
             # DataParallel model splits data to the different devices and gathers back
             # nvidia-smi shows 4 active devices (when there are 4 GPUs)
             model_output = model(**input)
  
             # Do final processing here. 
-            if True:
+            if get_sequence_embeddings == True:
                 sentence_embeddings = mean_pooling(model_output, data['attention_mask'])
                 sentence_embeddings = sentence_embeddings.to('cpu')
                 sentence_array_list.append(sentence_embeddings)
  
-            if True:
+            if get_aa_embeddings == True:
                 aa_embeddings, aa_shape = retrieve_aa_embeddings(model_output, layers = layers, padding = padding)
                 aa_embeddings = aa_embeddings.to('cpu')
                 aa_embeddings = np.array(aa_embeddings)
                 # Trim each down to just its sequence length
                 if ragged_arrays == True:
                     for j in range(len(aa_embeddings)):
-                         seqindex = (20 * count) + j
+                         seqindex = (batch_size * count) + j
                          print(count, j, seqindex, seqlens[seqindex])
                          print(aa_embeddings[j])
                          aa_embed_trunc = aa_embeddings[j][:seqlens[seqindex], :]
@@ -352,10 +357,11 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                     aa_embeddings = np.pad(aa_embeddings, npad)
                     aa_array_list.append(aa_embeddings)
 
+            count = count + 1
+
         end = time.time() 
         print("Total time to embed = {}".format(end - start))
   
-        count = count + 1
         ak_aa =np.concatenate(aa_array_list)
  
         
@@ -376,7 +382,12 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
 if __name__ == "__main__":
 
     args = get_embed_args()
-    #print(args.fasta_path, args.extra_padding)
+
+
+    if args.get_sequence_embeddings == False:
+         if args.get_aa_embeddings == False:
+             print("Must add --sequence_embeddings and/or --aa_embeddings, otherwise nothing to compute")
+             exit(1)
     ids, sequences, sequences_spaced = parse_fasta_for_embed(fasta_path = args.fasta_path, 
                                                              truncate = args.truncate, 
                                                              extra_padding = args.extra_padding)
@@ -399,7 +410,7 @@ if __name__ == "__main__":
 
     # Reduce sequence dimension with a new pca transform 
     if args.sequence_target_dim:
-       pkl_pca_out = "{}.sequence.{}dim.pcamatrix.pkl".format(args.pkl_in, args.sequence_target_dim)
+       pkl_pca_out = "{}.sequence.{}dim.pcamatrix.pkl".format(args.fasta_path, args.sequence_target_dim)
        embedding_dict['sequence_embeddings'] =  control_pca(embedding_dict, 
                                                 'sequence_embeddings', 
                                                 pkl_pca_out = pkl_pca_out, 
@@ -408,7 +419,7 @@ if __name__ == "__main__":
 
     # Reduce aa dimension with a new pca transform 
     if args.aa_target_dim:
-       pkl_pca_out = "{}.aa.{}dim.pcamatrix.pkl".format(args.pkl_in, args.aa_target_dim)
+       pkl_pca_out = "{}.aa.{}dim.pcamatrix.pkl".format(args.fasta_path, args.aa_target_dim)
        embedding_dict['aa_embeddings'] =  control_pca(embedding_dict, 
                                                 'aa_embeddings', 
                                                 pkl_pca_out = pkl_pca_out, 
