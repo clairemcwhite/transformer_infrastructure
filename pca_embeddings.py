@@ -142,13 +142,13 @@ def apply_pca(hidden_states, pcamatrix, bias):
     return(reduced)
 
 def load_pcamatrix(pkl_pca_in):
-    with open(args.pkl_pca_in, "rb") as f:
+    with open(pkl_pca_in, "rb") as f:
         cache_pca = pickle.load(f)
         pcamatrix = cache_pca['pcamatrix']
         bias = cache_pca['bias']
 
 
-    return pcamatrix, bias
+    return(pcamatrix, bias)
 
 
 def save_pcamatrix(pcamatrix, bias, pkl_pca_out):

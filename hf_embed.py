@@ -1,6 +1,6 @@
 #from sentence_transformers import SentenceTransformer, models
 from transformers import AutoTokenizer, AutoModel
-from transformer_infrastructure.pca_embeddings import control_pca
+from transformer_infrastructure.pca_embeddings import control_pca, load_pcamatrix, apply_pca
 import torch
 import torch.nn as nn
 from Bio import SeqIO
@@ -99,11 +99,11 @@ def get_embed_args():
                         help= "Optional: Truncate all sequences to this length")
     parser.add_argument("-ad", "--aa_target_dim", dest = "aa_target_dim", type = int, required = False,
                         help= "Optional: Run a new PCA on all amino acid embeddings with target n dimensions prior to saving")
-    parser.add_argument("-am", "--aa_pcamatrix_pkl", dest = "aa_pcamatrix", type = str, required = False,
+    parser.add_argument("-am", "--aa_pcamatrix_pkl", dest = "aa_pcamatrix_pkl", type = str, required = False,
                         help= "Optional: Use a pretrained PCA matrix to reduce dimensions of amino acid embeddings (pickle file with objects pcamatrix and bias")
     parser.add_argument("-sd", "--sequence_target_dim", dest = "sequence_target_dim", type = int, required = False,
                         help= "Optional: Run a new PCA on all sequence embeddings with target n dimensions prior to saving")
-    parser.add_argument("-sm", "--seq_pcamatrix_pkl", dest = "sequence_pcamatrix", type = str, required = False,
+    parser.add_argument("-sm", "--sequence_pcamatrix_pkl", dest = "sequence_pcamatrix_pkl", type = str, required = False,
                         help= "Optional: Use a pretrained PCA matrix to reduce dimensions of amino acid embeddings (pickle file with objects pcamatrix and bias")
     parser.add_argument("-r", "--use_ragged_arrays", dest = "ragged_arrays", action = "store_true", required = False,
                         help= "Optional: Use package 'awkward' to save ragged arrays fo amino acid embeddings")
@@ -259,7 +259,7 @@ class ListDataset(Dataset):
 #    return builder
 
 
-def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, -1], padding = 5, ragged_arrays = False):
+def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, -1], padding = 5, ragged_arrays = False, aa_pcamatrix_pkl = None, sequence_pcamatrix_pkl = None):
     '''
     Encode sequences with a transformer model
 
@@ -307,11 +307,17 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                       pin_memory=False)
     start = time.time()
 
-    # Need to concatate output of each chunk
-    sentence_array_list = []
+    # Need to concatenate output of each chunk
+    sequence_array_list = []
     aa_array_list = []
-#
-#    aa_builder = ak.ArrayBuilder()
+
+    if sequence_pcamatrix_pkl:
+          seq_pcamatrix, seq_bias = load_pcamatrix(sequence_pcamatrix_pkl)
+
+    if aa_pcamatrix_pkl:
+          aa_pcamatrix, aa_bias = load_pcamatrix(aa_pcamatrix_pkl)
+
+
 
     # Using awkward arrays for amino acids because sequence lengths are variable
     # If 10,000 long sequence was used, all sequences would be padded to 10,000
@@ -331,28 +337,39 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
  
             # Do final processing here. 
             if get_sequence_embeddings == True:
-                sentence_embeddings = mean_pooling(model_output, data['attention_mask'])
-                sentence_embeddings = sentence_embeddings.to('cpu')
-                sentence_array_list.append(sentence_embeddings)
+                sequence_embeddings = mean_pooling(model_output, data['attention_mask'])
+                sequence_embeddings = sequence_embeddings.to('cpu')
+
+                if sequence_pcamatrix_pkl:
+                    sequence_embeddings = apply_pca(sequence_embeddings, seq_pcamatrix, seq_bias)
+
+                sequence_array_list.append(sequence_embeddings)
  
             if get_aa_embeddings == True:
                 aa_embeddings, aa_shape = retrieve_aa_embeddings(model_output, layers = layers, padding = padding)
                 aa_embeddings = aa_embeddings.to('cpu')
                 aa_embeddings = np.array(aa_embeddings)
+                if aa_pcamatrix_pkl:
+                    aa_embeddings = np.apply_along_axis(apply_pca, 2, aa_embeddings, aa_pcamatrix, aa_bias)
+                    print("Post PCA aa_embeddings.shape", aa_embeddings.shape)
                 # Trim each down to just its sequence length
                 if ragged_arrays == True:
+                    aa_embed_ak_intermediate_list = []
                     for j in range(len(aa_embeddings)):
                          seqindex = (batch_size * count) + j
                          print(count, j, seqindex, seqlens[seqindex])
-                         print(aa_embeddings[j])
+                         #print(aa_embeddings[j])
                          aa_embed_trunc = aa_embeddings[j][:seqlens[seqindex], :]
                     
                          aa_embed_ak = ak.Array(aa_embed_trunc)
-                         aa_array_list.append(aa_embed_ak)
+                         aa_embed_ak_intermediate_list.append(aa_embed_ak)   
+
+
+                    aa_array_list.append(np.concatenate(aa_embed_ak_intermediate))
                
                 else:
                     # If not using ragged arrays, must pad to same dim as longest sequence
-                    print(maxlen - (aa_embeddings.shape[1] - 1))
+                    # print(maxlen - (aa_embeddings.shape[1] - 1))
                     npad = ((0,0), (0, maxlen - (aa_embeddings.shape[1] - 1)), (0,0))
                     aa_embeddings = np.pad(aa_embeddings, npad)
                     aa_array_list.append(aa_embeddings)
@@ -362,7 +379,6 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
         end = time.time() 
         print("Total time to embed = {}".format(end - start))
   
-        ak_aa =np.concatenate(aa_array_list)
  
         
         lengths = np.array(seqlens)
@@ -371,8 +387,14 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
         #ak_aa = make_direct(ak_aa, lengths, ak.ArrayBuilder()).snapshot()
 
         embedding_dict = {}
-        embedding_dict['sequence_embeddings'] = np.concatenate(sentence_array_list)
-        embedding_dict['aa_embeddings'] = ak_aa
+
+        if get_sequence_embeddings == True:
+            embedding_dict['sequence_embeddings'] = np.concatenate(sequence_array_list)
+
+        if get_aa_embeddings == True:
+
+            embedding_dict['aa_embeddings'] = np.concatenate(aa_array_list)
+
 
 
         return(embedding_dict)
@@ -406,8 +428,9 @@ if __name__ == "__main__":
                                     get_aa_embeddings = args.get_aa_embeddings, 
                                     padding = padding, 
                                     seqlens = seqlens,
-                                    ragged_arrays = args.ragged_arrays)
-
+                                    ragged_arrays = args.ragged_arrays,
+                                    aa_pcamatrix_pkl = args.aa_pcamatrix_pkl, 
+                                    sequence_pcamatrix_pkl = args.sequence_pcamatrix_pkl)
     # Reduce sequence dimension with a new pca transform 
     if args.sequence_target_dim:
        pkl_pca_out = "{}.sequence.{}dim.pcamatrix.pkl".format(args.fasta_path, args.sequence_target_dim)
@@ -427,16 +450,16 @@ if __name__ == "__main__":
                                                 max_train_sample_size = None)
 
     # Reduce sequence dimension with previous pca transform
-    if args.sequence_pcamatrix:
-       embedding_dict['sequence_embeddings'] =  control_pca(embedding_dict, 
-                                                'sequence_embeddings', 
-                                                pkl_pca_in = args.sequence_pcamatrix) 
+    #if args.sequence_pcamatrix:
+    #   embedding_dict['sequence_embeddings'] =  control_pca(embedding_dict, 
+    #                                            'sequence_embeddings', 
+    #                                            pkl_pca_in = args.sequence_pcamatrix) 
 
     # Reduce aa dimension with previous pca transform
-    if args.aa_pcamatrix:
-       embedding_dict['aa_embeddings'] =  control_pca(embedding_dict, 
-                                                'aa_embeddings', 
-                                                pkl_pca_in = args.aa_pcamatrix) 
+    #if args.aa_pcamatrix:
+    #   embedding_dict['aa_embeddings'] =  control_pca(embedding_dict, 
+    #                                            'aa_embeddings', 
+    #                                            pkl_pca_in = args.aa_pcamatrix) 
 
 
 
@@ -449,18 +472,21 @@ if __name__ == "__main__":
     
         pkl_log = "{}.description".format(args.pkl_out)
         with open(pkl_log, "w") as pOut:
-            pOut.write("Object {} dimensions: {}\n".format('sequence_embeddings', embedding_dict['sequence_embeddings'].shape))
-    
-            if args.ragged_arrays == True:
-                pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].type))
-                pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
-                pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
-        
-                pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=0)))
-                pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=1)))
-            # Else it's a square numpy array
-            else:
-                pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].shape))
+            if args.get_sequence_embeddings == True:
+               pOut.write("Object {} dimensions: {}\n".format('sequence_embeddings', embedding_dict['sequence_embeddings'].shape))
+
+
+            if args.get_aa_embeddings == True:    
+                if args.ragged_arrays == True:
+                    pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].type))
+                    pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
+                    pOut.write("aa_embeddings are an `awkward` arrays with dimensions\n")   
+            
+                    pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=0)))
+                    pOut.write("{}".format(ak.num(embedding_dict['aa_embeddings'], axis=1)))
+                # Else it's a square numpy array
+                else:
+                    pOut.write("Object {} dimensions: {}\n".format('aa_embeddings', embedding_dict['aa_embeddings'].shape))
                
     
             pOut.write("Contains sequences:\n")
