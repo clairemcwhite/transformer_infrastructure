@@ -408,7 +408,7 @@ if __name__ == "__main__":
 
     if args.get_sequence_embeddings == False:
          if args.get_aa_embeddings == False:
-             print("Must add --sequence_embeddings and/or --aa_embeddings, otherwise nothing to compute")
+             print("Must add --get_sequence_embeddings and/or --get_aa_embeddings, otherwise nothing to compute")
              exit(1)
     ids, sequences, sequences_spaced = parse_fasta_for_embed(fasta_path = args.fasta_path, 
                                                              truncate = args.truncate, 
