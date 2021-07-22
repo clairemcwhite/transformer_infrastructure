@@ -83,7 +83,6 @@ def candidate_to_remove(G, numseqs):
     for i in range(numseqs):
         others = [weights[x] for x in range(len(weights)) if x != i]
         z = (weights[i] - np.mean(others))/np.std(others)
-        print(i,z)
 
         if z < -3:
             questionable_z.append(i)
@@ -91,9 +90,10 @@ def candidate_to_remove(G, numseqs):
     #print(questionable_z) 
     return(questionable_z)
 
-def graph_from_cluster_orders(cluster_orders):
+def graph_from_cluster_orders(cluster_orders_lol):
+
     order_edges = []
-    for order in cluster_orders:
+    for order in cluster_orders_lol:
        for i in range(len(order) - 1):
           edge = (order[i], order[i + 1])
           #if edge not in order_edges:
@@ -104,18 +104,16 @@ def graph_from_cluster_orders(cluster_orders):
     G_order = igraph.Graph.TupleList(edges=order_edges, directed=True)
     return(G_order)
 
-def get_topological_sort(cluster_orders):
+def get_topological_sort(cluster_orders_lol):
     print("start topological sort")
-
-    cluster_orders_nonempty = [x for x in cluster_orders if len(x) > 0]
+    cluster_orders_nonempty = [x for x in cluster_orders_lol if len(x) > 0]
     dag_or_not = graph_from_cluster_orders(cluster_orders_nonempty).simplify().is_dag()
     # 
     
 
     print ("Dag or Not?, dag check immediately before topogical sort", dag_or_not)
-    if dag_or_not == False:
-         for x in cluster_orders_nonempty:
-              print(x)
+     # Something deletd from here? maybe a print
+    #if dag_or_not == False:
   
     G_order = graph_from_cluster_orders(cluster_orders_nonempty)
     G_order = G_order.simplify()
@@ -131,9 +129,9 @@ def get_topological_sort(cluster_orders):
 def remove_order_conflicts(cluster_order, seqs_aas, pos_to_clustid):
    print("remove_order_conflicts, before: ", cluster_order)
    bad_clustids = []
-   for i in range(len(seqs_aas)):
+   for x in seqs_aas:
       prevpos = -1  
-      for posid in seqs_aas[i]:
+      for posid in x:
 
           try:
               clustid = pos_to_clustid[posid]
@@ -181,7 +179,7 @@ def make_alignment(cluster_order, numseqs, clustid_to_clust):
     # Replace with matches
     # cluster_order = list in the order that clusters go
     alignment =  [["-"] * len(cluster_order) for i in range(numseqs)]
-    print(cluster_order)
+    #print(cluster_order)
     for order in range(len(cluster_order)):
        cluster = clustid_to_clust[cluster_order[order]]
        c_dict = {}
@@ -236,7 +234,7 @@ def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to
     # cluster_order must be zero:n
     # Add assertion
     pos_lists = []
-    for i in range(len(seqs_aas)):
+    for x in seqs_aas:
             pos_list = []
             startfound = False
 
@@ -245,7 +243,7 @@ def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to
                  startfound = True
                 
             prevclust = "" 
-            for pos in seqs_aas[i]:
+            for pos in x:
                 try: 
                     pos_clust = pos_to_clustid[pos]
                     prevclust = pos_clust
@@ -324,14 +322,14 @@ def get_unassigned_aas(seqs_aas, pos_to_clustid):
 
 
 
-
-def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2, to_exclude, minscore = 0.1, ignore_betweenness = False, betweenness_cutoff = 0.45):
+def address_unassigned(gap, seqs, seqs_aas, seqnums, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2, to_exclude, minscore = 0.1, ignore_betweenness = False, betweenness_cutoff = 0.45):
         new_clusters = []
 
         starting_clustid = gap[0]
         ending_clustid = gap[2] 
         gap_seqnum = gap[3]
         gap_seqaas = gap[1]
+        print('EXCLUDE', to_exclude)
         if gap_seqnum in to_exclude:
               return([], [])
         target_seqs_list = get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid)
@@ -350,9 +348,10 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
         for seq in target_seqs_list:
            for query_id in seq:
                query_seqnum = query_id.seqnum
+               query_seqnum_ind = seqnums.index(query_seqnum)
                seqpos = query_id.seqpos
-               ind = I2[query_seqnum][seqpos]
-               dist = D2[query_seqnum][seqpos]    
+               ind = I2[query_seqnum_ind][seqpos]
+               dist = D2[query_seqnum_ind][seqpos]    
                for j in range(len(ind)):
                    ids = ind[j]
                    #print(query_id)
@@ -373,10 +372,6 @@ def address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clust
  
         new_rbh = get_rbhs(new_hitlist)
        
-        #print("gapfilling rbh")
-        #for x in new_rbh:
-      
-        #      print(x)
   
 
         G = graph_from_rbh(new_rbh) 
@@ -496,8 +491,6 @@ def squish_clusters(cluster_order, clustid_to_clust, D, I, full_cov_numseq):
           print("c1", c1)
           print("c2", c2)
           combo = c1 + c2
-          #for x in intra_clust_hits:
-          #   print(x)      
           scores = [x[2] for x in intra_clust_hits if x is not None]
           # Ad hoc, get ones where multiple acceptable hits to second column
           if len(scores) > (0.5 * len(c1) * len(c2)):
@@ -544,8 +537,6 @@ def remove_overlap_with_old_clusters(new_clusters, prior_clusters):
         else:
              final_new_clusters.append(n)
 
-    for x in final_new_clusters:
-      print(x)
     return(final_new_clusters)
     
  
@@ -636,8 +627,6 @@ def merge_clusters_no_overlaps(combined_clusters):
        for i in range(0,len(cluster)):
             reduced_edgelist.append([cluster[0],cluster[i]])
    
-    #for x in reduced_edgelist:
-    #     print(x)
     new_G = igraph.Graph.TupleList(edges=reduced_edgelist, directed=False)
     #new_G = new_G.simplify()
     merged_clustering = new_G.clusters(mode = "weak")
@@ -652,15 +641,13 @@ def merge_clusters_no_overlaps(combined_clusters):
 
 
  
-def remove_feedback_edges(cluster_orders, clusters_filt, remove_both):
+def remove_feedback_edges(cluster_orders_dict, clusters_filt, remove_both):
     """
     Remove both improves quality of initial alignment by remove both aas that are found out of order
     For final refinement, only remove the first one that occurs out of order
 
     """
-    for x in cluster_orders:
-         print(x)
-    G_order = graph_from_cluster_orders(cluster_orders)
+    G_order = graph_from_cluster_orders(list(cluster_orders_dict.values()))
     weights = [1] * len(G_order.es)
 
     # Remove multiedges and self loops
@@ -694,18 +681,18 @@ def remove_feedback_edges(cluster_orders, clusters_filt, remove_both):
     # REMOVE all places where seqnum is inferred from order
     #cluster_orders_dag = []
     remove_dict = {}
-    for i in range(len(cluster_orders)):
-      print(cluster_orders[i])
+    
+    for seqnum, clustorder in cluster_orders_dict.items():
       remove = []
-      for j in range(len(cluster_orders[i]) - 1):
-           if [cluster_orders[i][j], cluster_orders[i][j +1]] in to_remove:
+      for j in range(len(clustorder) - 1):
+           if [clustorder[j], clustorder[j +1]] in to_remove:
                #print(cluster_orders[i])
                #print(remove_both) 
                #print(cluster_orders[i][j], cluster_orders[i][j + 1])
                if remove_both == True:
-                   remove.append(cluster_orders[i][j])
-               remove.append(cluster_orders[i][j + 1])
-           remove_dict[i] = list(set(remove))
+                   remove.append(clustorder[j])
+               remove.append(clustorder[j + 1])
+           remove_dict[seqnum] = list(set(remove))
            
     print("remove_dict", remove_dict)
     clusters_filt_dag = []
@@ -974,7 +961,8 @@ def reshape_flat(hstates_list):
     hidden_states = np.reshape(hstates_list, (hstates_list.shape[0]*hstates_list.shape[1], hstates_list.shape[2]))
     return(hidden_states)
 
-def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
+#ERROR HERE, w/ indexing somehow
+def split_distances_to_sequence(D, I, seqnums, index_to_aa, numseqs, padded_seqlen):
    I_tmp = []
    D_tmp = []
    print(D.shape)
@@ -988,9 +976,12 @@ def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
       for j in range(len(I[i])):
            try:
               aa = index_to_aa[I[i][j]]
+
               seqnum = aa.seqnum
-              I_query[seqnum].append(aa) 
-              D_query[seqnum].append(D[i][j])
+              seqnum_index = seqnums.index(seqnum)
+              # ISSUE LOCTION
+              I_query[seqnum_index].append(aa) 
+              D_query[seqnum_index].append(D[i][j])
            except Exception as E:
                continue
       I_tmp.append(I_query)
@@ -1003,34 +994,64 @@ def split_distances_to_sequence(D, I, index_to_aa, numseqs, padded_seqlen):
 
 
 
-def get_besthits(D, I, index_to_aa, padded_seqlen, minscore = 0.1, to_exclude = [] ):
+def get_besthits(D, I, seqnums, index_to_aa, padded_seqlen, minscore = 0.1, to_exclude = [] ):
 
    #aa_to_index = {value: key for key, value in index_to_aa.items()}
 
    hitlist = []
-   for query_seq in range(len(D)):
-     
+
+   #
+      #          query_seqnum = query_id.seqnum
+      #         query_seqnum_ind = seqnums.index(query_seqnum)
+      #         seqpos = query_id.seqpos
+      #         ind = I2[query_seqnum_ind][seqpos]
+      #         dist = D2[query_seqnum_ind][seqpos]
+   print(seqnums)
+   print(len(D))
+   print(len(D[0][0]))
+   print(len(I))
+   print(len(I[0][0]))
+   print(index_to_aa)
+   for query_i in range(len(D)):
+      query_seq = seqnums[query_i]
+      if query_seq in [3,19]:
+
+         print(query_seq)
+      # Remove this
       if query_seq in to_exclude: 
+          print("excluding?")
           continue
-      for query_aa in range(len(D[query_seq])):
+      for query_aa in range(len(D[query_i])):
            # Non-sequence padding isn't in dictionary
            try:
-              query_id = index_to_aa[query_seq * padded_seqlen + query_aa] 
+              query_id = index_to_aa[query_i * padded_seqlen + query_aa] 
 
            except Exception as E:
+              #print("exception", query_i, padded_seqlen, query_aa)
               continue
-           
-           for target_seq in range(len(D[query_seq][query_aa])):
-               scores = D[query_seq][query_aa][target_seq]
+           # THE ERROR IS IN SWITCHIN OUT INDEX IDS TO AA's 
+           # Looks like error is earlier in getting the index 
+           for target_i in range(len(D[query_i][query_aa])):
+               target_seq = seqnums[target_i]
+               print(target_seq, target_i, "seq, i")
+               scores = D[query_i][query_aa][target_i]
+               #if query_seq in [3,19]:
+               #     print("scores", scores)
+
                if len(scores) == 0:
                   continue
-               ids = I[query_seq][query_aa][target_seq]
-              
+               ids = I[query_i][query_aa][target_i]
+               print("IDS", ids) 
                bestscore = scores[0]
                bestmatch_id = ids[0]
-               if bestscore >= minscore:
-                  hitlist.append([query_id, bestmatch_id, bestscore])
 
+               if bestscore >= minscore:
+                  # WHAT
+                  if query_seq in [ 19]:
+                      print(["preckec", query_id, bestmatch_id, bestscore])
+                  hitlist.append([query_id, bestmatch_id, bestscore])
+   for x in hitlist:
+       print("errorcheck", x)
    return(hitlist) 
 
 def get_rbhs(hitlist_top):
@@ -1178,8 +1199,8 @@ def first_clustering(G, betweenness_cutoff = 0.45, minclustsize = 0, ignore_betw
         
  
     print("First pass clusters")
-    for x in cluster_list:
-         print(x)
+    #for x in cluster_list:
+    #     print(x)
     print("First pass done")
     return(cluster_list, hb_list)
 
@@ -1272,9 +1293,10 @@ def get_cluster_dict(clusters, seqs):
  
 def get_cluster_orders(cluster_dict, seqs_aas):
     # This is getting path of each sequence through clusters 
-    cluster_orders = []
+    cluster_orders_dict = {}
 
     for i in range(len(seqs_aas)):
+        seqnum = seqs_aas[i][0].seqnum # Get the setnum of the set of aas
         cluster_order = []
         for j in range(len(seqs_aas[i])):
 
@@ -1285,8 +1307,8 @@ def get_cluster_orders(cluster_dict, seqs_aas):
            except Exception as E:
               # Not every aa is sorted into a cluster
               continue
-        cluster_orders.append(cluster_order)
-    return(cluster_orders)
+        cluster_orders_dict[seqnum] = cluster_order
+    return(cluster_orders_dict)
 
 #cluster_orders_dag, pos_to_clust_dag, dag_reached = clusters_to_dag(clusters_filt, seqs_aas)
 
@@ -1304,8 +1326,8 @@ def clusters_to_dag(clusters_filt, seqs_aas, remove_both = True, dag_reached = F
     print(pos_to_clustid)
     print("test2")
     print(clustid_to_clust)
-    cluster_orders = get_cluster_orders(pos_to_clustid, seqs_aas)
-    print(cluster_orders)
+    cluster_orders_dict = get_cluster_orders(pos_to_clustid, seqs_aas)
+    #print(cluster_orders_dict)
     print("test3")
 
     #for i in cluster_orders:
@@ -1317,7 +1339,7 @@ def clusters_to_dag(clusters_filt, seqs_aas, remove_both = True, dag_reached = F
     #      print(cluster_orders[i])
 
     print("Find directed acyclic graph")   
-    clusters_filt_dag = remove_feedback_edges(cluster_orders, clusters_filt, remove_both)
+    clusters_filt_dag = remove_feedback_edges(cluster_orders_dict, clusters_filt, remove_both)
 
     #for x in clusters_filt_dag:
     #   print(x)
@@ -1326,14 +1348,11 @@ def clusters_to_dag(clusters_filt, seqs_aas, remove_both = True, dag_reached = F
     print("Get cluster order after feedback removeal")
     pos_to_clust_dag, clustid_to_clust_dag = get_cluster_dict(clusters_filt_dag, seqs_aas)
 
-    cluster_orders_dag = get_cluster_orders(pos_to_clust_dag, seqs_aas)
+    cluster_orders_dict = get_cluster_orders(pos_to_clust_dag, seqs_aas)
 
-
-    dag_or_not_func = graph_from_cluster_orders(cluster_orders_dag).simplify().is_dag()
-    print ("Dag or Not? from function, ", dag_or_not_func) 
-    for x in cluster_orders_dag:
-           print(x)
-
+    #print(cluster_orders_dict)
+    dag_or_not_func = graph_from_cluster_orders(list(cluster_orders_dict.values())).simplify().is_dag()
+    print("Dag or Not? from function, ", dag_or_not_func) 
 
     if dag_or_not_func == True:
           dag_reached = True
@@ -1342,14 +1361,14 @@ def clusters_to_dag(clusters_filt, seqs_aas, remove_both = True, dag_reached = F
           print("DAG not reached, will try to remove further edges")
           dag_reached = False
     clusters_filt = list(clustid_to_clust_dag.values())
-    return(cluster_orders_dag, pos_to_clust_dag, clustid_to_clust_dag, clusters_filt, dag_reached)
+    return(cluster_orders_dict, pos_to_clust_dag, clustid_to_clust_dag, clusters_filt, dag_reached)
 
 
 
 
-def dag_to_cluster_order(cluster_orders_dag, seqs_aas, pos_to_clust_dag, clustid_to_clust_dag):
+def dag_to_cluster_order(cluster_orders_dict, seqs_aas, pos_to_clust_dag, clustid_to_clust_dag):
     print("calling_topo_sort from function")
-    cluster_order = get_topological_sort(cluster_orders_dag) 
+    cluster_order = get_topological_sort(list(cluster_orders_dict.values())) 
     print("For each sequence check that the cluster order doesn't conflict with aa order")
     cluster_order = remove_order_conflicts(cluster_order, seqs_aas, pos_to_clust_dag)
 
@@ -1436,7 +1455,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude):
     k_select = numseqs 
     sentence_array = np.array(embedding_dict['sequence_embeddings']) 
  
-    print("sentence_array", sentence_array)
+    #print("sentence_array", sentence_array)
     s_index = build_index(sentence_array)
     s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
 
@@ -1487,7 +1506,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude):
     for seq_cluster_G in seq_clusters.subgraphs():
         hstates = []
         seq_cluster = seq_cluster_G.vs()['name']
-        print(seq_cluster)
+        #print(seq_cluster)
         seq_cluster.sort()
         print(seq_cluster)
         cluster_seqnums_list.append(seq_cluster)
@@ -1496,7 +1515,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude):
         axis = 0
         group_hstates = np.take(embedding_dict['aa_embeddings'], filter_indices, axis)
         group_hstates_list.append(group_hstates)
-        print(group_hstates.shape)
+        #Aprint(group_hstates.shape)
 
         cluster_names = [seq_names[i] for i in filter_indices]
         cluster_names_list.append(cluster_names)
@@ -1510,7 +1529,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude):
 
 
 
-def get_similarity_network(seqs, seq_names, seq_nums, hstates_list, logging, padding = 10, minscore1 = 0.5, remove_outlier_sequences = True, to_exclude = []):
+def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padding = 10, minscore1 = 0.5, remove_outlier_sequences = True, to_exclude = []):
     """
     Control for running whole alignment process
     Last four layers [-4, -3, -2, -1] is a good choice for layers
@@ -1560,10 +1579,10 @@ def get_similarity_network(seqs, seq_names, seq_nums, hstates_list, logging, pad
     # Write sequences with aa ids
     seqs_aas = []
     for i in range(len(seqs)):
-        print(seqs[i])
+        #print(seqs[i])
         
         seq_aas = []
-        seqnum = seq_nums[i]
+        seqnum = seqnums[i]
         for j in range(len(seqs[i])):
            aa = AA()
            aa.seqnum = seqnum
@@ -1575,7 +1594,8 @@ def get_similarity_network(seqs, seq_names, seq_nums, hstates_list, logging, pad
     
     print(seqs_aas)
     # Can this be combined with previous?
-    print(seqs_aas)
+    #print(seqs_aas)
+
     index_to_aa = {}
     for i in range(len(seqs_aas)):
         for j in range(padded_seqlen):
@@ -1597,24 +1617,29 @@ def get_similarity_network(seqs, seq_names, seq_nums, hstates_list, logging, pad
     logging.info("Split results into proteins") 
     print("Split results into proteins") 
     # Still annoyingly slow
-    D2, I2 = split_distances_to_sequence(D1, I1, index_to_aa, numseqs, padded_seqlen) 
+    D2, I2 = split_distances_to_sequence(D1, I1, seqnums, index_to_aa, numseqs, padded_seqlen) 
+    #print(I2)
     logging.info("get best hitlist")
     print("get best hitlist")
     minscore1 = 0.5
 
-    #hitlist_all = 
-    hitlist_all = get_besthits(D2, I2, index_to_aa, padded_seqlen, minscore = 0.01, to_exclude = to_exclude)
+    #Don't need to propagate to_exclude, since won't be in sequence list in the first place
+ 
+    # THIS IS LIKELY h
+    hitlist_all = get_besthits(D2, I2, seqnums, index_to_aa, padded_seqlen, minscore = 0.01, to_exclude = to_exclude)
+
+
+
 
     hitlist_top = [ x for x in hitlist_all if x[2] >= minscore1]
  
-    for x in hitlist_top:
-          print(x)
+    #print("hitlist_top")
+    #for x in hitlist_top:
+    #      print(x)
     logging.info("Get reciprocal best hits")
     print("Get reciprocal best hits")
     rbh_list = get_rbhs(hitlist_top) 
 
-    #for x in rbh_list:
-    #     print(x)
 
     print("got reciprocal besthits")
    
@@ -1641,12 +1666,6 @@ def get_similarity_network(seqs, seq_names, seq_nums, hstates_list, logging, pad
 
     G = graph_from_rbh(rbh_list, directed = False)
   
-    print(G)
-
-
-    #for x in rbh_list:
-    #    if x[0] == "0-25-H":
-    #         print(x)
 
     #print(G.vs.find(name = "0-25-H"))
     #connections = G.es.select(_source = 242)
@@ -1658,17 +1677,6 @@ def get_similarity_network(seqs, seq_names, seq_nums, hstates_list, logging, pad
     print("High betweenness list, hblist: ", hb_list)
 
 
-
-    #logging.info("Start Walktrap clustering")
-    #print("Walktrap clustering")
-    #clusters_list = get_walktrap(rbh_list)
- 
-    #for x in rbh_list:
-    #   print(x) 
-    #with open("clustertest.csv", "w") as outfile:
-    #   for c in clusters:
-    #        outstring = "{},{}\n".format(c[0], c[1])
-    #        outfile.write(outstring) 
     print("start rbh_select, check this")
     logging.info("Start rbh select")
     # Filter rbhs down to just ones that are in clusters?
@@ -1776,26 +1784,26 @@ def get_similarity_network(seqs, seq_names, seq_nums, hstates_list, logging, pad
             # Do clustering within guideposts
             # Don't allow modification of previous guideposts
             print("Align by rbh between guideposts")
-            cluster_order, clustid_to_clust, pos_to_clustid, alignment, hopelessly_unassigned = fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, cluster_order, clustid_to_clust, pos_to_clustid, numseqs, I2, D2, to_exclude, minscore = minscore ,minclustsize = minclustsize, ignore_betweenness = ignore_betweenness, betweenness_cutoff = betweenness_cutoff)
+            cluster_order, clustid_to_clust, pos_to_clustid, alignment, hopelessly_unassigned = fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, seqnums, cluster_order, clustid_to_clust, pos_to_clustid, numseqs, I2, D2, to_exclude, minscore = minscore ,minclustsize = minclustsize, ignore_betweenness = ignore_betweenness, betweenness_cutoff = betweenness_cutoff)
 
         # After than do a sort of aa's into previous clusters
         # First using rbh
         # Then using individual search. 
         else:
-            print(cluster_order)
-            print(clustid_to_clust) 
+            #print(cluster_order)
+            #print(clustid_to_clust) 
             print("Add aa's into previous clusters")
 
             # Use original rbh to fill in easy cases
             # Or maybe do updated rbh between guideposts
             if gapfilling_attempt == 2:
                 print("Align by best match (original rbh") 
-                clustid_to_clust = fill_in_unassigned2(unassigned, seqs, seqs_aas, G, clustid_to_clust)
+                clustid_to_clust = fill_in_unassigned2(unassigned, seqs, seqs_aas, G, clustid_to_clust, to_exclude)
 
 
             else:
                 print("Align by best match (looser)")
-                clustid_to_clust = fill_in_unassigned3(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, numseqs, index, hidden_states, to_exclude, index_to_aa)
+                clustid_to_clust = fill_in_unassigned3(unassigned, seqs, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, numseqs, index, hidden_states, to_exclude, index_to_aa, to_exclude)
 
 
             clusters_filt = list(clustid_to_clust.values())
@@ -1994,6 +2002,9 @@ def fill_in_unassigned3(unassigned, seqs, seqs_aas, cluster_order, clustid_to_cl
 
         starting_clustid =  gap[0]
         ending_clustid = gap[2]
+        
+        if gap[1][0].seqnum in to_exclude:
+            continue
 
         for gap_aa in gap[1]:
             gap_aa_cluster_max = []
@@ -2027,7 +2038,7 @@ def fill_in_unassigned3(unassigned, seqs, seqs_aas, cluster_order, clustid_to_cl
 #                      print([x for x in candidates if x[1] == target_seq.index])
 
 
-def fill_in_unassigned2(unassigned, seqs, seqs_aas, G, clustid_to_clust):
+def fill_in_unassigned2(unassigned, seqs, seqs_aas, G, clustid_to_clust, to_exclude):
     '''
     Try group based assignment
     Decision between old cluster and new cluster?
@@ -2046,11 +2057,13 @@ def fill_in_unassigned2(unassigned, seqs, seqs_aas, G, clustid_to_clust):
 
         starting_clustid =  gap[0]
         ending_clustid = gap[2]
-
+        if gap[1][0].seqnum in to_exclude:
+            print(gap[1], gap[1][0].seqnum, "exclude", to_exclude)
+            continue
         for gap_aa in gap[1]:
             gap_aa_cluster_max = []
             scores = []
-           
+             
             unassigned_index = G.vs.find(name = gap_aa).index
             print("unassigned index", unassigned_index) 
             connections = G.es.select(_source = unassigned_index)
@@ -2109,7 +2122,7 @@ def get_best_matches(starting_clustid, ending_clustid, gap_aa, clustid_to_clust,
 
 
 
-def fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, cluster_order, clustid_to_clust, pos_to_clustid, numseqs, I2, D2, to_exclude, minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.45 ):        
+def fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, seqnums, cluster_order, clustid_to_clust, pos_to_clustid, numseqs, I2, D2, to_exclude, minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.45 ):        
     '''
     Run the same original clustering, allows overwritting of previous clusters
     
@@ -2125,7 +2138,7 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, cluster_order, clu
     hopelessly_unassigned = []
     for gap in unassigned:
         print("BETWEEENNESS BTW", betweenness_cutoff)
-        newer_clusters, newer_hopelessly_unassigned = address_unassigned(gap, seqs, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2, to_exclude, minscore = minscore, ignore_betweenness = ignore_betweenness, betweenness_cutoff = betweenness_cutoff)
+        newer_clusters, newer_hopelessly_unassigned = address_unassigned(gap, seqs, seqs_aas, seqnums, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2, to_exclude, minscore = minscore, ignore_betweenness = ignore_betweenness, betweenness_cutoff = betweenness_cutoff)
 
         new_clusters  = new_clusters + newer_clusters
         hopelessly_unassigned = hopelessly_unassigned + newer_hopelessly_unassigned
@@ -2295,39 +2308,29 @@ if __name__ == '__main__':
     #fasta = "tests/znfdoubled.fasta"
     seq_names, seqs, seqs_spaced= format_sequences(fasta, padding = padding)#, truncate = [0,20])
  
-    for seq in seqs_spaced:
-       print(seq)
-    for seq in seq_names:
-         print(seq)
-
-    
-
-    # STRAT remove difficult ones
-    # Use good ones to build a profile
-    # Doesn't force an alignment,
-    # Flags outliers, which can then be match to the hmm if needed
-
-    # Choice of layers affects quality
-    # Some layers likely better matchers
     
     #layers = [ -4, -3,-2, -1]
     layers = [-4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
     #layers = [ -5, -10, -9, -8, -3] 
     #layers = [-28]
+    # CHECK exclude  list correspond with actual seqnum (NOT index)
+    # The exclude system is broken.
+    # But no excluding anymore, just clustering...
     exclude = True
     #model, tokenizer = load_model(model_name)
 
     logging.info("Get hidden states")
     print("get hidden states for each seq")
     seqs_spaced = seqs_spaced[0:20]
-
-    embedding_pkl = None
+    #embedding_pkl = None
     #embedding_pkl = "tester_10znfs.pkl"
     #embedding_pkl = "tester_BBS11018.pkl"
+    embedding_pkl = "tester_rbs2_20.pkl"
     if embedding_pkl:
        with open(embedding_pkl, "rb") as f:
              embedding_dict = pickle.load(f)
+             print(embedding_dict['aa_embeddings'].shape)
 
     else:
         seqlens = [len(x) for x in seqs]
@@ -2354,7 +2357,7 @@ if __name__ == '__main__':
         group_seqnums = cluster_seqnums_list[i]
         group_names = cluster_names_list[i]
         group_embeddings = cluster_hstates_list[i] 
-  
+        print(group_embeddings.shape) 
         #alignment = get_similarity_network(layers, model, tokenizer, group_seqs, group_names, logging, padding = padding, minscore1 = minscore1, exclude = exclude )
 
         group_seqs_out = "alignment_group{}.fasta".format(i)
