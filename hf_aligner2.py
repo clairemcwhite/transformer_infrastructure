@@ -2364,6 +2364,7 @@ if __name__ == '__main__':
 
     os.system("cat out.mafft")
 
+
          
 
                # Not doing squish for now
