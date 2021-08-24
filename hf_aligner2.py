@@ -1680,7 +1680,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
     betweenness_cutoff = 0.42
 
     ############## CONTROL LOOP ###################
-    for gapfilling_attempt in range(0, 10):
+    for gapfilling_attempt in range(0, 20):
         gapfilling_attempt = gapfilling_attempt + 1
 
         unassigned = get_unassigned_aas(seqs_aas, pos_to_clustid)
@@ -1709,21 +1709,28 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
         # This is the start of the last tries
         print(unassigned)
         #print(prev_unassigned)
-        if unassigned == prev_unassigned:
+        if unassigned == prev_unassigned and gapfilling_attempt > 10:
             print("Align by placing remaining amino acids")
-            alignment = fill_in_hopeless2(unassigned, seqs, seqs_aas, seqnums, cluster_order, clustid_to_clust, pos_to_clustid, numseqs, index, hidden_states, to_exclude)
+            cluster_order, clustid_to_clust, pos_to_clustid, alignment = fill_in_hopeless2(unassigned, seqs, seqs_aas, seqnums, cluster_order, clustid_to_clust, pos_to_clustid, numseqs, index, hidden_states, to_exclude)
+            unassigned = get_unassigned_aas(seqs_aas, pos_to_clustid)
+            for x in unassigned:
+                print("post hopeless2 unasassigned", x)
+
             print("try a squish")
             full_cov_seqnum = numseqs - len(to_exclude)
             cluster_order, clustid_to_clust = squish_clusters(cluster_order, clustid_to_clust, index, hidden_states, full_cov_seqnum)                
             alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
 
 
+
             return(alignment)
  
         prev_unassigned = unassigned
-
+        # HERE this needs to cycle through this
+        # LIKE 1,2,3,1,2,3,1,2,3
+        
         # Do one or two rounds of clustering between guideposts
-        if gapfilling_attempt == 1:
+        if gapfilling_attempt in [1,4,7]:
             # Do clustering within guideposts
             # Don't allow modification of previous guideposts
             print("Align by rbh between guideposts")
@@ -1739,7 +1746,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
 
             # Use original rbh to fill in easy cases
             # Or maybe do updated rbh between guideposts
-            if gapfilling_attempt == 2:
+            if gapfilling_attempt in [2, 5,8]:
                 print("Align by best match (original rbh") 
                 clustid_to_clust = fill_in_unassigned2(unassigned, seqs, seqs_aas, G, clustid_to_clust, to_exclude)
 
@@ -1753,15 +1760,15 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
             cluster_orders, pos_to_clust, clustid_to_clust, clusters, dag_reached = clusters_to_dag(clusters_filt, seqs_aas, remove_both = False)
             print("Post gapfilling Dag reached?", dag_reached)
             # HERE NEED DAG CHECK
-            attempts = 1
+            dag_attempts = 1
             while dag_reached == False:
                   clusters_filt = list(clustid_to_clust.values())
                   cluster_orders, pos_to_clust, clustid_to_clust, clusters, dag_reached = clusters_to_dag(clusters_filt, seqs_aas, remove_both = False)          
-                  print("check Post gapfilling Dag reached?", dag_reached, " Attempt", attempts)
-                  if attempts > 5:
+                  print("check Post gapfilling Dag reached?", dag_reached, " Attempt", dag_attempts)
+                  if dag_attempts > 5:
                       print("Dag could not be reached")
                       return(0)
-                  attempts = attempts + 1
+                  dag_attempts = dag_attempts + 1
 
 
             print("Dag found, getting cluster order with topological sort of merged clusters")
@@ -1810,21 +1817,21 @@ def fill_in_hopeless2(unassigned, seqs, seqs_aas, seqnums, cluster_order, clusti
         if len(target_seqs) == 0:
             for aa in gap_seqaas:
                   clusters_filt.append([aa])
-
+                  #print("clusters_filt", clusters_filt)
         # If candidate amino acids, search for more remote homology
         # Moving this earlier, add option to change threshold here
         else:
               for aa in gap_seqaas:
+                  print(aa)
                   candidates = get_looser_scores(aa, index, hidden_states)    
-                  #print(z[0])
-                  #print(z[1])
-                  #for target_seq in target_seqs:
-                  #    #print(target_seq.index)
-                  #    for score in candidates:
-                  #        if score[1] == target_seq.index:
-                  #              print("candidate score", target_seq, score)
+                  #print(candidates)
+                  for target_seq in target_seqs:
+                      #print(target_seq.index)
+                      for score in candidates:
+                          if score[1] == target_seq.index:
+                                print("candidate score", target_seq, score)
                   #  
-                  #    print([x for x in candidates if x[1] == target_seq.index])
+                      #print([x for x in candidates if x[1] == target_seq.index])
      # ???????? where are candidates used?
         # If it's longer, search for remote homology
    
@@ -1832,8 +1839,18 @@ def fill_in_hopeless2(unassigned, seqs, seqs_aas, seqnums, cluster_order, clusti
     #     print("cluster_filt", x)
     
     cluster_orders, pos_to_clust, clustid_to_clust, clusters, dag_reached = clusters_to_dag(clusters_filt, seqs_aas, remove_both = False)
-    print("Post gapfilling Dag reached?", dag_reached)
+    print("Filli in hopeless2 Post gapfilling Dag reached?", dag_reached)
     # HERE NEED DAG CHECK
+    dag_attempts = 1
+    while dag_reached == False:
+                  clusters_filt = list(clustid_to_clust.values())
+                  cluster_orders, pos_to_clust, clustid_to_clust, clusters, dag_reached = clusters_to_dag(clusters_filt, seqs_aas, remove_both = False)
+                  print("check Post gapfilling Dag reached?", dag_reached, " Attempt", dag_attempts)
+                  if dag_attempts > 5:
+                      print("Dag could not be reached")
+                      return(0)
+                  dag_attempts = dag_attempts + 1
+
 
     print("Dag found, getting cluster order with topological sort of merged clusters")
     cluster_order, clustid_to_clust, pos_to_clustid =  dag_to_cluster_order(cluster_orders, seqs_aas, pos_to_clust, clustid_to_clust)
@@ -1843,9 +1860,9 @@ def fill_in_hopeless2(unassigned, seqs, seqs_aas, seqnums, cluster_order, clusti
     #print("First gap filling alignment")
     alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
     print(alignment_print(alignment, seq_names)[0])
-    return(alignment)
+    return(cluster_order, clustid_to_clust, pos_to_clustid, alignment)
 
-   
+
     
 
 def format_gaps(unassigned, highest_clustnum):
@@ -1902,8 +1919,7 @@ def fill_in_unassigned3(unassigned, seqs, seqs_aas, cluster_order, clustid_to_cl
                    continue
                 candidates_aa.append([target_aa, score[0]])
 
-
-            #print(candidates_aa)
+            print("unassigned3", gap_aa, candidates_aa)
             clustid_to_clust = get_best_matches(starting_clustid, ending_clustid, gap_aa, clustid_to_clust, candidates_aa)
 
 
@@ -1967,14 +1983,15 @@ def get_best_matches(starting_clustid, ending_clustid, gap_aa, clustid_to_clust,
     scores = []
     current_best_score = 0
     current_best_match = ""
+    print(starting_clustid, ending_clustid)
     for cand in range(starting_clustid + 1, ending_clustid):
          #print("candidate", gap_aa, cand,  clustid_to_clust[cand])
      
          candidate_aas =  clustid_to_clust[cand]
          incluster_scores = [x for x in both if x[0] in candidate_aas]
-         #print("incluster scores", incluster_scores)
+         print("incluster scores", incluster_scores)
          total_incluster_score = sum([x[1] for x in incluster_scores])
-         #print("totla_inclucster", total_incluster_score)
+         print("totla_inclucster", total_incluster_score)
          if total_incluster_score > current_best_score:
               current_best_score = total_incluster_score
               current_best_match = cand
@@ -1997,7 +2014,7 @@ def get_best_matches(starting_clustid, ending_clustid, gap_aa, clustid_to_clust,
 
 def fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, seqnums, cluster_order, clustid_to_clust, pos_to_clustid, numseqs, I2, D2, to_exclude, minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.45 ):        
     '''
-    Run the same original clustering, allows overwritting of previous clusters
+    Run the same original clustering, ??? allows overwritting of previous clusters
     
     '''
     clusters_filt = list(clustid_to_clust.values())
