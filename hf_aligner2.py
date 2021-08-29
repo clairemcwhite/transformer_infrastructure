@@ -85,8 +85,9 @@ def candidate_to_remove(G, numseqs):
     for i in range(numseqs):
         others = [weights[x] for x in range(len(weights)) if x != i]
         z = (weights[i] - np.mean(others))/np.std(others)
-
-        if z < -3:
+        print("sequence ", i, " zscore ", z)
+        # This should scale with # of sequences?
+        if z < -10:
             questionable_z.append(i)
        
     #print(questionable_z) 
@@ -1536,8 +1537,8 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude, d
     s_index = build_index(sentence_array)
     s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
 
-    #print(s_distance) 
-    #print(s_index2)
+    print(s_distance) 
+    print(s_index2)
     G = graph_from_distindex(s_index2, s_distance)
     #print(G)
     G = G.simplify(combine_edges = "first")  # symmetrical, doesn't matter
@@ -1611,7 +1612,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude, d
 
 
 
-def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padding = 10, minscore1 = 0.5, remove_outlier_sequences = True, to_exclude = []):
+def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padding = 5, minscore1 = 0.5, remove_outlier_sequences = True, to_exclude = []):
     """
     Control for running whole alignment process
     Last four layers [-4, -3, -2, -1] is a good choice for layers
@@ -1705,12 +1706,12 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
     #print(I2)
     logging.info("get best hitlist")
     print("get best hitlist")
-    minscore1 = 0.5
+    minscore1 = minscore1
 
     #Don't need to propagate to_exclude, since won't be in sequence list in the first place
  
     # THIS IS LIKELY h
-    hitlist_all = get_besthits(D2, I2, seqnums, index_to_aa, padded_seqlen, minscore = 0.01, to_exclude = to_exclude)
+    hitlist_all = get_besthits(D2, I2, seqnums, index_to_aa, padded_seqlen, minscore = minscore1, to_exclude = to_exclude)
 
 
 
@@ -1948,7 +1949,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
                   clusters_filt = list(clustid_to_clust.values())
                   cluster_orders, pos_to_clust, clustid_to_clust, clusters, dag_reached = clusters_to_dag(clusters_filt, seqs_aas, remove_both = False)          
                   print("check Post gapfilling Dag reached?", dag_reached, " Attempt", dag_attempts)
-                  if dag_attempts > 5:
+                  if dag_attempts > 100:
                       print("Dag could not be reached")
                       return(0)
                   dag_attempts = dag_attempts + 1
@@ -2029,7 +2030,7 @@ def fill_in_hopeless2(unassigned, seqs, seqs_aas, seqnums, cluster_order, clusti
                   clusters_filt = list(clustid_to_clust.values())
                   cluster_orders, pos_to_clust, clustid_to_clust, clusters, dag_reached = clusters_to_dag(clusters_filt, seqs_aas, remove_both = False)
                   print("check Post gapfilling Dag reached?", dag_reached, " Attempt", dag_attempts)
-                  if dag_attempts > 5:
+                  if dag_attempts > 15:
                       print("Dag could not be reached")
                       return(0)
                   dag_attempts = dag_attempts + 1
@@ -2318,14 +2319,19 @@ def get_align_args():
     parser.add_argument("-i", "--in", dest = "fasta_path", type = str, required = True,
                         help="Path to fasta")
     
-    parser.add_argument("-e", "--emb", dest = "embedding_path", type = str, required = True,
+    parser.add_argument("-e", "--emb", dest = "embedding_path", type = str, required = False,
                         help="Path to embeddings")
 
     parser.add_argument("-o", "--outfile", dest = "out_path", type = str, required = True,
                         help="Path to outfile")
 
+
     parser.add_argument("-ex", "--exclude", dest = "exclude", action = "store_true",
-                        help="Exclude poorly matching sequences from final alignment")
+                        help="Exclude outlier sequences from initial alignment process")
+
+
+    parser.add_argument("-fx", "--fully_exclude", dest = "fully_exclude", action = "store_true",
+                        help="Additionally exclude outlier sequences from final alignment")
 
 
 
@@ -2345,7 +2351,8 @@ if __name__ == '__main__':
     embedding_path = args.embedding_path
     outfile = args.out_path
     exclude = args.exclude
-    
+    fully_exclude = args.fully_exclude
+   
     print("WHAT") 
  
     # Keep to demonstrate effect of clustering or not
@@ -2419,7 +2426,7 @@ if __name__ == '__main__':
                                     seqlens = seqlens,
                                     get_sequence_embeddings = True,
                                     get_aa_embeddings = True,
-                                    padding = 5)
+                                    padding = padding)
 
    
      
@@ -2433,7 +2440,7 @@ if __name__ == '__main__':
          excluded_record = SeqRecord(Seq(seqs[excluded_seqnum]), id=seq_names[excluded_seqnum], description = '')
          excluded_records.append(excluded_record)
          # Option to keep poor matches out
-         if exclude != True:
+         if fully_exclude != True:
             aln_fasta_list.append([">{}\n{}\n".format(seq_names[excluded_seqnum], seqs[excluded_seqnum])])
 
     with open("excluded.fasta", "w") as output_handle:
@@ -2478,7 +2485,7 @@ if __name__ == '__main__':
         with open(clustal_align_out, "w") as o:
               o.write(clustal_align_i)
         # If nothing to merge
-        if len(cluster_names_list) == 1 and len(excluded_records) == 0:
+        if len(cluster_names_list) == 1 and ( len(excluded_records) == 0 or fully_exclude == True ) :
             with open(outfile, "w") as o:
                   o.write(clustal_align_i)
             sys.exit()
