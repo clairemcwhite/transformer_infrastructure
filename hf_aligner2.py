@@ -455,6 +455,85 @@ def address_isolated_aas(unassigned_aa, cohort_aas, D, I, minscore):
  
     return(cluster)
 
+def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
+    print("full_cov_numseq", full_cov_numseq)
+    for i in range(len(cluster_order)-1):
+       c1 = clustid_to_clust[cluster_order[i]]
+       if len(c1) < full_cov_numseq: 
+          print("Gap found in cluster {}".format(c1))              
+  
+          
+          min_pos_shift = 0 # delete?
+          # For each placed aa in column with gap
+          c1_merge_dist = 0 # delete?
+          avail_gaps = []
+          dist_blocks = []
+          max_clustid = len(cluster_order)
+          present_gaps = full_cov_numseq - len(c1)
+          all_block_aas = []
+          for aa in c1:
+             dist_block = 1
+             avail_gap = 0
+             gap_reached = False
+             block_aas = [aa]
+             
+             # Scan distance to next gap 
+             for j in range(i + 1, len(cluster_order)):
+                  cluster_seqnums = [x.seqnum for x in clustid_to_clust[cluster_order[j]]]
+                  if j >= max_clustid + dist_block:
+                       avail_gaps.append(avail_gap)
+                       break
+                  #print(aa, cluster_seqnums)
+                  if aa.seqnum in cluster_seqnums:
+                      if gap_reached == True:
+                          avail_gaps.append(avail_gap)
+                          max_clustid = j
+                          break
+                      #print("add to block")
+                      block_aas = block_aas + [x for x in clustid_to_clust[cluster_order[j]] if x.seqnum == aa.seqnum]
+                      all_block_aas = all_block_aas  + block_aas
+                      dist_block = dist_block  + 1
+                  else:
+                      #print("add to gap")
+                      present_gaps = present_gaps + 1
+                      avail_gap = avail_gap + 1
+                      gap_reached = True
+
+             dist_blocks.append(dist_block)
+             print("for aa {}, block = {}, and gap = {}".format(aa, dist_block, avail_gap))
+
+          if avail_gaps:
+             print("There are currently {} gaps".format(present_gaps))
+             print("avail_gaps = {}".format(avail_gaps))
+             print("We can attempt a merge at distance {}".format(min(avail_gaps)))     
+             shift_dist = min(avail_gaps)
+             block_range = max(dist_blocks)
+             print("block range: {}".format(block_range))
+             #if block_range > 5: # FOR TESTING
+             #   continue
+             potention_new_clusts = [] 
+             new_gap_count = 0
+             tot_displaced = 0
+             current_clust = c1
+             print("all_block_aas", all_block_aas)
+             for b in range(0, block_range):
+
+                target_clust = clustid_to_clust[cluster_order[i + b + shift_dist ]]          
+                displaced = [x for x in target_clust if x in all_block_aas]
+                print("{} would be displaced from cluster {}".format(displaced, target_clust))
+                
+                target_minus_displaced = [x for x in target_clust if x not in all_block_aas]
+                potential_new_clust = current_clust + target_minus_displaced
+                current_clust = displaced
+                num_displaced = len(displaced)
+                tot_displaced = tot_displaced + num_displaced
+                print("potential new clust", potential_new_clust)
+                new_gap_count = new_gap_count + full_cov_numseq - len(potential_new_clust)
+             print("Current gaps: {}, displaced: {}, new gaps: {}".format(present_gaps, tot_displaced, new_gap_count))
+ 
+
+    return cluster_order, clustid_to_clust
+
 def squish_clusters2(cluster_order, clustid_to_clust, index,hidden_states, full_cov_numseq, index_to_aa):
     
     '''
@@ -561,7 +640,7 @@ def squish_clusters2(cluster_order, clustid_to_clust, index,hidden_states, full_
         #ifor vs in sub_G.vs():
             
       
-
+    #squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq)
     return(cluster_order, clustid_to_clust)
 
  
@@ -1859,7 +1938,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
 
         if len(unassigned) == 0:
             print("Alignment complete after {} gapfilling attempt".format(gapfilling_attempt - 1))
-            full_cov_seqnum = numseqs - len(to_exclude)
+            #full_cov_seqnum = numseqs - len(to_exclude)
   
       
             alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
@@ -1867,11 +1946,15 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
             print("PRESQUISH")
             print(alignment)
             for i in range(0,10):
-                cluster_order, clustid_to_clust = squish_clusters2(cluster_order, clustid_to_clust, index, hidden_states, full_cov_seqnum, index_to_aa)                
+                cluster_order, clustid_to_clust = squish_clusters2(cluster_order, clustid_to_clust, index, hidden_states, numseqs, index_to_aa)                
             alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
             print("POSTSQUISH")
             print(alignment)
  
+
+            print("POSTSQUISH2") 
+            squish_clusters_longrange(cluster_order, clustid_to_clust, numseqs)
+             
 
             return(alignment)
         else:
@@ -1887,7 +1970,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
                print("try a squish")
 
                # Repeated code 
-               full_cov_seqnum = numseqs - len(to_exclude)
+               #full_cov_seqnum = numseqs - len(to_exclude)
   
       
                alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
@@ -1895,10 +1978,12 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
                print("PRESQUISH")
                print(alignment)
                for i in range(0,10):
-                   cluster_order, clustid_to_clust = squish_clusters2(cluster_order, clustid_to_clust, index, hidden_states, full_cov_seqnum, index_to_aa)                
+                   cluster_order, clustid_to_clust = squish_clusters2(cluster_order, clustid_to_clust, index, hidden_states, numseqs, index_to_aa)                
                alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
                print("POSTSQUISH")
                print(alignment)
+               print("POSTSQUISH2") 
+               squish_clusters_longrange(cluster_order, clustid_to_clust, numseqs)
    
 
                return(alignment)
@@ -1914,19 +1999,21 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
                 print("post hopeless2 unasassigned", x)
 
             print("No progress, try a squish")
-            full_cov_seqnum = numseqs - len(to_exclude)
+            #full_cov_seqnum = numseqs - len(to_exclude)
     
             alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
 
             print("PRESQUISH")
             print(alignment)
             for i in range(0,10):
-                cluster_order, clustid_to_clust = squish_clusters2(cluster_order, clustid_to_clust, index, hidden_states, full_cov_seqnum, index_to_aa)                
+                cluster_order, clustid_to_clust = squish_clusters2(cluster_order, clustid_to_clust, index, hidden_states, numseqs, index_to_aa)                
             alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
             print("POSTSQUISH")
             print(alignment)
 
-
+            print("POSTSQUISH2") 
+            squish_clusters_longrange(cluster_order, clustid_to_clust, numseqs)
+ 
 
             return(alignment)
  
