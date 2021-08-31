@@ -71,7 +71,7 @@ def graph_from_distindex(index, dist):
 
 # If removing a protein leads to less of a drop in total edgeweight that other proteins
 
-def candidate_to_remove(G, numseqs):
+def candidate_to_remove(G, numseqs,z = -10):
 
     weights = []  
     for i in range(numseqs):
@@ -81,13 +81,13 @@ def candidate_to_remove(G, numseqs):
         weight = sum(g_new.es.select(_source=vs)['weight'])
         weights.append(weight)
     questionable_z = []
-    print("Sequence z scores")
+    print("Sequence z scores, current threshold: ", z)
     for i in range(numseqs):
         others = [weights[x] for x in range(len(weights)) if x != i]
-        z = (weights[i] - np.mean(others))/np.std(others)
-        print("sequence ", i, " zscore ", z)
+        seq_z = (weights[i] - np.mean(others))/np.std(others)
+        print("sequence ", i, " zscore ", seq_z)
         # This should scale with # of sequences?
-        if z < -10:
+        if seq_z < z:
             questionable_z.append(i)
        
     #print(questionable_z) 
@@ -1033,11 +1033,11 @@ def reshape_flat(hstates_list):
     hidden_states = np.reshape(hstates_list, (hstates_list.shape[0]*hstates_list.shape[1], hstates_list.shape[2]))
     return(hidden_states)
 
-#ERROR HERE, w/ indexing somehow
 def split_distances_to_sequence(D, I, seqnums, index_to_aa, numseqs, padded_seqlen):
    I_tmp = []
    D_tmp = []
-   #print(D.shape)
+   print(D.shape)
+   print(I.shape)
    # For each amino acid...
    for i in range(len(I)):
       #print(i)
@@ -1051,17 +1051,21 @@ def split_distances_to_sequence(D, I, seqnums, index_to_aa, numseqs, padded_seql
 
               seqnum = aa.seqnum
               seqnum_index = seqnums.index(seqnum)
-              # ISSUE LOCTION
               I_query[seqnum_index].append(aa) 
               D_query[seqnum_index].append(D[i][j])
            except Exception as E:
                continue
+      #print(len(I_query[i]), len(D_query[i]))
+      #if len(I_query[i]) != len(D_query[i]):
+      #      print("ISSUE")
+
       I_tmp.append(I_query)
       D_tmp.append(D_query)
-   #print(padded_seqlen)
+   print(padded_seqlen)
    D =  [D_tmp[i:i + padded_seqlen] for i in range(0, len(D_tmp), padded_seqlen)]
    I =  [I_tmp[i:i + padded_seqlen] for i in range(0, len(I_tmp), padded_seqlen)]
 
+  
    return(D, I)
 
 
@@ -1078,12 +1082,13 @@ def get_besthits(D, I, seqnums, index_to_aa, padded_seqlen, minscore = 0.1, to_e
       #         seqpos = query_id.seqpos
       #         ind = I2[query_seqnum_ind][seqpos]
       #         dist = D2[query_seqnum_ind][seqpos]
-   #print(seqnums)
-  # print(len(D))
-  # print(len(D[0][0]))
-  # print(len(I))
-  # print(len(I[0][0]))
-   #print(index_to_aa)
+   print(seqnums)
+   print(padded_seqlen)
+   print(len(D))
+   print(len(D[0][0]))
+   print(len(I))
+   print(len(I[0][0]))
+   print(index_to_aa)
    for query_i in range(len(D)):
       query_seq = seqnums[query_i]
       # Remove this
@@ -1097,26 +1102,26 @@ def get_besthits(D, I, seqnums, index_to_aa, padded_seqlen, minscore = 0.1, to_e
            except Exception as E:
               #print("exception", query_i, padded_seqlen, query_aa)
               continue
-           # THE ERROR IS IN SWITCHIN OUT INDEX IDS TO AA's 
-           # Looks like error is earlier in getting the index 
            for target_i in range(len(D[query_i][query_aa])):
                target_seq = seqnums[target_i]
                #print(target_seq, target_i, "seq, i")
                scores = D[query_i][query_aa][target_i]
-               #if query_seq in [3,19]:
-               #     print("scores", scores)
-
                if len(scores) == 0:
                   continue
                ids = I[query_i][query_aa][target_i]
+               if query_seq in [4]:
+                    print(query_id)
+                    print("scores", scores)
+                    print("ids", ids)
+
                #print("IDS", ids) 
                bestscore = scores[0]
                bestmatch_id = ids[0]
 
                if bestscore >= minscore:
                   # WHAT
-                  #if query_seq in [ 19]:
-                      #print(["preckec", query_id, bestmatch_id, bestscore])
+                  #if query_seq in [4]:
+                  #    print(["preckeck", query_id, bestmatch_id, bestscore])
                   hitlist.append([query_id, bestmatch_id, bestscore])
    #for x in hitlist:
    #    print("errorcheck", x)
@@ -1545,20 +1550,8 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude, d
     #print(G)
     #print("not excluding?", exclude)
     to_exclude = []
-    if exclude == True:
-        to_exclude = candidate_to_remove(G, numseqs)
-        print('name', to_exclude)
-        to_delete_ids = [v.index for v in G.vs if v['name'] in to_exclude]
-        print('vertix_id', to_delete_ids)
-        G.delete_vertices(to_delete_ids) 
 
-        logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-
-    else:
-       logging.info("Not removing outlier sequences")
-       to_exclude = []
- 
-    
+   
     group_hstates_list = []
     cluster_seqnums_list = []
     cluster_names_list = []
@@ -1579,8 +1572,20 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude, d
            # This has about same output as fastgreedy
             #print("multilevel")
             #seq_clusters = G.community_multilevel(weights = 'weight')
-      
+       
         for seq_cluster_G in seq_clusters.subgraphs():
+            # Do exclusion within clusters
+            if exclude == True:
+
+                cluster_to_exclude = candidate_to_remove(seq_cluster_G, numseqs, z = -5)
+                print('name', to_exclude)
+                to_delete_ids = [v.index for v in seq_cluster_G.vs if v['name'] in cluster_to_exclude]
+                print('vertix_id', to_delete_ids)
+                seq_cluster_G.delete_vertices(to_delete_ids) 
+                to_exclude = to_exclude + cluster_to_exclude
+        
+                logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
+ 
             hstates = []
             seq_cluster = seq_cluster_G.vs()['name']
             seq_cluster.sort()
@@ -1598,6 +1603,20 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude, d
             cluster_seq = [seqs[i] for i in filter_indices]
             cluster_seqs_list.append(cluster_seq)
     else:
+         if exclude == True:
+            to_exclude = candidate_to_remove(G, numseqs)
+            print('name', to_exclude)
+            to_delete_ids = [v.index for v in G.vs if v['name'] in to_exclude]
+            print('vertix_id', to_delete_ids)
+            G.delete_vertices(to_delete_ids) 
+    
+            logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
+    
+         else:
+           logging.info("Not removing outlier sequences")
+           to_exclude = []
+ 
+ 
         # print([v['name'] for v in G.vs])
          cluster_seqnums_list =  [v['name'] for v in G.vs]
          print(cluster_seqnums_list, to_exclude)
@@ -1607,6 +1626,9 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude, d
          cluster_names_list = [[seq_names[i] for i in cluster_seqnums_list]]
          group_hstates_list = [np.take(embedding_dict['aa_embeddings'], cluster_seqnums_list, axis = 0)]
          cluster_seqnums_list = [cluster_seqnums_list] 
+
+
+
 
     return(cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, group_hstates_list, to_exclude)
 
@@ -1713,14 +1735,13 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
     # THIS IS LIKELY h
     hitlist_all = get_besthits(D2, I2, seqnums, index_to_aa, padded_seqlen, minscore = minscore1, to_exclude = to_exclude)
 
-
-
+   
 
     hitlist_top = [ x for x in hitlist_all if x[2] >= minscore1]
  
-    #print("hitlist_top")
-    #for x in hitlist_top:
-    #      print("hitlist_top", x)
+    print("hitlist_top")
+    for x in hitlist_top:
+          print("hitlist_top", x)
     logging.info("Get reciprocal best hits")
     print("Get reciprocal best hits")
     rbh_list = get_rbhs(hitlist_top) 
@@ -1739,11 +1760,11 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
     ######################################### Do walktrap clustering
     # Why isn't this directed?
 
-    with open("testnet.csv", "w") as outfile:
+    with open("testnet2.csv", "w") as outfile:
           outfile.write("aa1,aa2,score\n")
           # If do reverse first, don't have to do second resort
           for x in rbh_list:
-             outstring = "{},{}\n".format(x[0], x[1])        
+             outstring = "{},{},{}\n".format(x[0], x[1], x[2])        
              outfile.write(outstring)
 
 
@@ -1914,7 +1935,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
         # LIKE 1,2,3,1,2,3,1,2,3
         
         # Do one or two rounds of clustering between guideposts
-        if gapfilling_attempt in [1,4,6,8,10]:
+        if gapfilling_attempt in [3,4,6,8,10]:
             # Do clustering within guideposts
             # Don't allow modification of previous guideposts
             print("Align by rbh between guideposts")
@@ -1930,7 +1951,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
 
             # Use original rbh to fill in easy cases
             # Or maybe do updated rbh between guideposts
-            if gapfilling_attempt in [2]:
+            if gapfilling_attempt in [1]:
                 print("Align by best match (original rbh") 
                 clustid_to_clust = fill_in_unassigned2(unassigned, seqs, seqs_aas, G, clustid_to_clust, to_exclude)
 
@@ -2353,7 +2374,6 @@ if __name__ == '__main__':
     exclude = args.exclude
     fully_exclude = args.fully_exclude
    
-    print("WHAT") 
  
     # Keep to demonstrate effect of clustering or not
     do_clustering = True
