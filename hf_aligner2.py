@@ -457,6 +457,8 @@ def address_isolated_aas(unassigned_aa, cohort_aas, D, I, minscore):
 
 def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
     print("full_cov_numseq", full_cov_numseq)
+    removed_clustids = []              
+
     for i in range(len(cluster_order)-1):
        c1 = clustid_to_clust[cluster_order[i]]
        if len(c1) < full_cov_numseq: 
@@ -484,6 +486,7 @@ def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
                        avail_gaps.append(avail_gap)
                        break
                   #print(aa, cluster_seqnums)
+                  #present_gaps = present_gaps + full_cov_numseq - len(cluster_seqnums)
                   if aa.seqnum in cluster_seqnums:
                       if gap_reached == True:
                           avail_gaps.append(avail_gap)
@@ -495,7 +498,7 @@ def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
                       dist_block = dist_block  + 1
                   else:
                       #print("add to gap")
-                      present_gaps = present_gaps + 1
+                      #present_gaps = present_gaps + 1
                       avail_gap = avail_gap + 1
                       gap_reached = True
 
@@ -511,14 +514,27 @@ def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
              print("block range: {}".format(block_range))
              #if block_range > 5: # FOR TESTING
              #   continue
-             potention_new_clusts = [] 
+             potential_new_clusts = [] 
              new_gap_count = 0
              tot_displaced = 0
              current_clust = c1
-             print("all_block_aas", all_block_aas)
+           
+             current_gaps = 0
+             #print("all_block_aas", all_block_aas)
+             current_gaps = current_gaps + full_cov_numseq - len(current_clust)
+            
              for b in range(0, block_range):
+                print("gaps", current_gaps, full_cov_numseq, len(current_clust))
+            
 
+                print(i + b + shift_dist, len(cluster_order))
+                if (i + b + shift_dist) >= len(cluster_order):
+                     break
                 target_clust = clustid_to_clust[cluster_order[i + b + shift_dist ]]          
+                current_gaps = current_gaps + full_cov_numseq - len(target_clust)
+                #if b == block_range:
+                #    current_gaps = current_gaps + full_cov_numseq - len(target_clust)
+
                 displaced = [x for x in target_clust if x in all_block_aas]
                 print("{} would be displaced from cluster {}".format(displaced, target_clust))
                 
@@ -528,8 +544,23 @@ def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
                 num_displaced = len(displaced)
                 tot_displaced = tot_displaced + num_displaced
                 print("potential new clust", potential_new_clust)
+                potential_new_clusts.append(potential_new_clust)
                 new_gap_count = new_gap_count + full_cov_numseq - len(potential_new_clust)
-             print("Current gaps: {}, displaced: {}, new gaps: {}".format(present_gaps, tot_displaced, new_gap_count))
+             print("Current gaps: {}, displaced: {}, new gaps: {}".format(current_gaps, tot_displaced, new_gap_count))
+             # Not very scientific
+             if tot_displaced < current_gaps:
+                   if new_gap_count * tot_displaced < current_gaps: 
+                      for p in range(shift_dist):
+                          clustid_to_clust[cluster_order[i + p]] = []
+                          removed_clustids.append(cluster_order[i + p])                      
+
+                      for z in range(0, block_range):
+                            print("x")
+                            clustid_to_clust[cluster_order[i + z + shift_dist]] = potential_new_clusts[z]
+                            print("updated", potential_new_clusts[z])
+              #c = [cluster1, cluster2]
+    print("Removed clustids", removed_clustids)
+    cluster_order = [x for x in cluster_order if x not in removed_clustids]
  
 
     return cluster_order, clustid_to_clust
@@ -1953,8 +1984,10 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
  
 
             print("POSTSQUISH2") 
-            squish_clusters_longrange(cluster_order, clustid_to_clust, numseqs)
-             
+            cluster_order, clustid_to_clust = squish_clusters_longrange(cluster_order, clustid_to_clust, numseqs)
+            alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
+
+
 
             return(alignment)
         else:
@@ -1983,8 +2016,9 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
                print("POSTSQUISH")
                print(alignment)
                print("POSTSQUISH2") 
-               squish_clusters_longrange(cluster_order, clustid_to_clust, numseqs)
-   
+               cluster_order, clustid_to_clust = squish_clusters_longrange(cluster_order, clustid_to_clust, numseqs)
+               alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
+
 
                return(alignment)
 
@@ -2012,8 +2046,9 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
             print(alignment)
 
             print("POSTSQUISH2") 
-            squish_clusters_longrange(cluster_order, clustid_to_clust, numseqs)
- 
+            cluster_order, clustid_to_clust = squish_clusters_longrange(cluster_order, clustid_to_clust, numseqs)
+            alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
+
 
             return(alignment)
  
