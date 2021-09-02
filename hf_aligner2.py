@@ -71,21 +71,33 @@ def graph_from_distindex(index, dist):
 
 # If removing a protein leads to less of a drop in total edgeweight that other proteins
 
-def candidate_to_remove(G, numseqs,z = -10):
+def candidate_to_remove(G, v_names,z = -10):
 
-    weights = []  
-    for i in range(numseqs):
+    print("v_names", v_names)
+    weights = {}  
+    for i in v_names:
         # Potentially put in function
         g_new = G.copy()
         vs = g_new.vs.find(name = i)
         weight = sum(g_new.es.select(_source=vs)['weight'])
-        weights.append(weight)
+        weights[i] = weight
+        #weights.append(weight)
     questionable_z = []
     print("Sequence z scores, current threshold: ", z)
-    for i in range(numseqs):
-        others = [weights[x] for x in range(len(weights)) if x != i]
-        seq_z = (weights[i] - np.mean(others))/np.std(others)
+    for i in v_names:
+
+        others = []
+        for key,value in weights.items():
+            if key == i:
+                own_value = value
+            else:
+                others.append(value)  
+
+        #others = [weights[x] for x in range(len(weights)) if x != i]
+        seq_z = (own_value - np.mean(others))/np.std(others)
+        #seq_z = (weights[i] - np.mean(others))/np.std(others)
         print("sequence ", i, " zscore ", seq_z)
+
         # This should scale with # of sequences?
         if seq_z < z:
             questionable_z.append(i)
@@ -207,17 +219,16 @@ def make_alignment(cluster_order, seqnums, clustid_to_clust):
     for line in alignment:
        row_str = "".join(line)
        print("Align: ", row_str[0:150])
-       alignment_str = alignment_str + row_str + "\n"
         
-    alignment_str_list = ["".join(x) for x in alignment]
 
 
-    return(alignment_str_list)
+    return(alignment)
 
 def alignment_print(alignment, seq_names):
        
         records = []
-        
+        alignment = ["".join(x) for x in alignment]
+       
               
         for i in range(len(alignment)):
              #print(seq_names[i], alignment[i])
@@ -455,14 +466,55 @@ def address_isolated_aas(unassigned_aa, cohort_aas, D, I, minscore):
  
     return(cluster)
 
-def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
-    print("full_cov_numseq", full_cov_numseq)
+def address_stranded(cluster_order, clustid_to_clust, alignment):
+
+    adict = {}
+    for seq in alignment:
+       firstpos = True
+       current_streak = 0
+       prev_streak = 0
+       last_pos = seq[0]
+       for pos in seq:
+            print(pos, current_streak, prev_streak)
+            if pos == "-":
+               current_streak = current_streak + 1
+            else:
+               if current_streak > 0 and firstpos == True:
+                  adict[last_pos] = [0, current_streak]
+               if prev_streak > 0 & current_streak > 0:
+                  adict[last_pos] = [prev_streak, current_streak]
+               prev_streak = current_streak
+               current_streak = 0                      
+               last_pos = pos
+               firstpos  = False  
+
+    print("stranded") 
+    print(adict)
+
+
+    #for i in range(len(alignment[0])):
+       
+
+
+    # Start of "in a gap" 
+    # To address where first character placed then gap
+    
+    #for i in range(len(cluster_order) - 1):
+    #  c1 = clustid_to_clust[cluster_order[i]]
+      # contains gap
+    #  if len(c1) < full_cov_numseq:
+            # if contains gap, see which sequence has gap
+
+    #        print("x")            
+    #return(0)
+
+def squish_clusters_longrange(cluster_order, clustid_to_clust, numseq):
+    print("numseq", numseq)
     removed_clustids = []              
 
     for i in range(len(cluster_order)-1):
        c1 = clustid_to_clust[cluster_order[i]]
-       if len(c1) < full_cov_numseq: 
-          print("Gap found in cluster {}".format(c1))              
+       if len(c1) < numseq: 
   
           
           min_pos_shift = 0 # delete?
@@ -471,7 +523,7 @@ def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
           avail_gaps = []
           dist_blocks = []
           max_clustid = len(cluster_order)
-          present_gaps = full_cov_numseq - len(c1)
+          present_gaps = numseq - len(c1)
           all_block_aas = []
           for aa in c1:
              dist_block = 1
@@ -486,7 +538,7 @@ def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
                        avail_gaps.append(avail_gap)
                        break
                   #print(aa, cluster_seqnums)
-                  #present_gaps = present_gaps + full_cov_numseq - len(cluster_seqnums)
+                  #present_gaps = present_gaps + numseq - len(cluster_seqnums)
                   if aa.seqnum in cluster_seqnums:
                       if gap_reached == True:
                           avail_gaps.append(avail_gap)
@@ -503,15 +555,15 @@ def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
                       gap_reached = True
 
              dist_blocks.append(dist_block)
-             print("for aa {}, block = {}, and gap = {}".format(aa, dist_block, avail_gap))
+             #print("for aa {}, block = {}, and gap = {}".format(aa, dist_block, avail_gap))
 
           if avail_gaps:
-             print("There are currently {} gaps".format(present_gaps))
-             print("avail_gaps = {}".format(avail_gaps))
-             print("We can attempt a merge at distance {}".format(min(avail_gaps)))     
+             #print("There are currently {} gaps".format(present_gaps))
+             #print("avail_gaps = {}".format(avail_gaps))
+             #print("We can attempt a merge at distance {}".format(min(avail_gaps)))     
              shift_dist = min(avail_gaps)
              block_range = max(dist_blocks)
-             print("block range: {}".format(block_range))
+             #print("block range: {}".format(block_range))
              #if block_range > 5: # FOR TESTING
              #   continue
              potential_new_clusts = [] 
@@ -521,41 +573,46 @@ def squish_clusters_longrange(cluster_order, clustid_to_clust, full_cov_numseq):
            
              current_gaps = 0
              #print("all_block_aas", all_block_aas)
-             current_gaps = current_gaps + full_cov_numseq - len(current_clust)
+             current_gaps = current_gaps + numseq - len(current_clust)
             
              for b in range(0, block_range):
-                print("gaps", current_gaps, full_cov_numseq, len(current_clust))
+                #print("gaps", current_gaps, numseq, len(current_clust))
             
 
-                print(i + b + shift_dist, len(cluster_order))
+                #print(i + b + shift_dist, len(cluster_order))
                 if (i + b + shift_dist) >= len(cluster_order):
                      break
                 target_clust = clustid_to_clust[cluster_order[i + b + shift_dist ]]          
-                current_gaps = current_gaps + full_cov_numseq - len(target_clust)
+                current_gaps = current_gaps + numseq - len(target_clust)
                 #if b == block_range:
-                #    current_gaps = current_gaps + full_cov_numseq - len(target_clust)
+                #    current_gaps = current_gaps + numseq - len(target_clust)
 
                 displaced = [x for x in target_clust if x in all_block_aas]
-                print("{} would be displaced from cluster {}".format(displaced, target_clust))
+                #print("{} would be displaced from cluster {}".format(displaced, target_clust))
                 
                 target_minus_displaced = [x for x in target_clust if x not in all_block_aas]
                 potential_new_clust = current_clust + target_minus_displaced
                 current_clust = displaced
                 num_displaced = len(displaced)
                 tot_displaced = tot_displaced + num_displaced
-                print("potential new clust", potential_new_clust)
+                #print("potential new clust", potential_new_clust)
                 potential_new_clusts.append(potential_new_clust)
-                new_gap_count = new_gap_count + full_cov_numseq - len(potential_new_clust)
+                new_gap_count = new_gap_count + numseq - len(potential_new_clust)
+             print("Gap found in cluster {}".format(cluster_order[i]))              
              print("Current gaps: {}, displaced: {}, new gaps: {}".format(current_gaps, tot_displaced, new_gap_count))
              # Not very scientific
              if tot_displaced < current_gaps:
+                if tot_displaced < 10:
+                  if new_gap_count < 5:
                    if new_gap_count * tot_displaced < current_gaps: 
+                      print("from original gap cluster {}".format(cluster_order[i]))
+                      print("merging forward with shift dist {}".format(shift_dist))
                       for p in range(shift_dist):
+                          print("deleting {}".format(clustid_to_clust[cluster_order[i + p]]))
                           clustid_to_clust[cluster_order[i + p]] = []
                           removed_clustids.append(cluster_order[i + p])                      
 
                       for z in range(0, block_range):
-                            print("x")
                             clustid_to_clust[cluster_order[i + z + shift_dist]] = potential_new_clusts[z]
                             print("updated", potential_new_clusts[z])
               #c = [cluster1, cluster2]
@@ -1687,7 +1744,9 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude, d
             # Do exclusion within clusters
             if exclude == True:
 
-                cluster_to_exclude = candidate_to_remove(seq_cluster_G, numseqs, z = -5)
+                clust_names = seq_cluster_G.vs()["name"]
+                print(clust_names)
+                cluster_to_exclude = candidate_to_remove(seq_cluster_G, clust_names, z = -5)
                 print('name', to_exclude)
                 to_delete_ids = [v.index for v in seq_cluster_G.vs if v['name'] in cluster_to_exclude]
                 print('vertix_id', to_delete_ids)
@@ -1989,7 +2048,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
 
 
 
-            return(alignment)
+            return(cluster_order, clustid_to_clust, alignment)
         else:
             print("Gap filling attempt: {}".format(gapfilling_attempt))       
             unassigned_seqs = []
@@ -2020,7 +2079,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
                alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
 
 
-               return(alignment)
+               return(cluster_order, clustid_to_clust, alignment)
 
         # This is the start of the last tries
         print(unassigned)
@@ -2050,7 +2109,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
             alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
 
 
-            return(alignment)
+            return(cluster_order, clustid_to_clust, alignment)
  
         prev_unassigned = unassigned
         # HERE this needs to cycle through this
@@ -2104,7 +2163,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
             #print(clustid_to_clust)
             alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
             print(alignment_print(alignment, seq_names)[0])
-    return(alignment)   
+    return(cluster_order, clustid_to_clust, alignment)   
 
 
 def get_cluster_score(cluster, query, index, hidden_states):
@@ -2606,7 +2665,13 @@ if __name__ == '__main__':
         with open(group_seqs_out, "w") as output_handle:
             SeqIO.write(group_records, output_handle, "fasta")
 
-        alignment = get_similarity_network(group_seqs, group_names, group_seqnums, group_embeddings, logging, padding = padding, minscore1 = minscore1, to_exclude = to_exclude )
+        cluster_order, clustid_to_clust, alignment = get_similarity_network(group_seqs, group_names, group_seqnums, group_embeddings, logging, padding = padding, minscore1 = minscore1, to_exclude = to_exclude )
+
+        #cluster_order, clustid_to_clust, alignment = 
+        #address_stranded(cluster_order, clustid_to_clust, alignment)
+
+
+
         aln_fasta_list_group = []
         for k in range(len(alignment)):
                aln_fasta_list_group.append(">{}\n{}\n".format(group_names[k], alignment[k]))     
