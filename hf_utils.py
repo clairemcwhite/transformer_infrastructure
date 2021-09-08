@@ -59,8 +59,12 @@ def get_sequencelabel_tags(labels):
 ### Similarity
 def build_index(hidden_states):
 
+    # ISSUE ex. ghf34, where negative returned
     d = hidden_states.shape[1]
     index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
+    #index = faiss.index_factory(d, f"SQ4", faiss.METRIC_INNER_PRODUCT)
+    #index.train(hidden_states)
+    #index =  faiss.IndexFlatIP(d)
     faiss.normalize_L2(hidden_states)
     index.add(hidden_states)
     return(index)
