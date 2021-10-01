@@ -11,16 +11,21 @@
 #model.save_pretrained(outdir)
 
 
-
-from transformers import AlbertTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModelForTokenClassification
   
-tokenizer = AlbertTokenizer.from_pretrained("Rostlab/prot_t5_xxl_bfd")
-tokenizer.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd')
-model = AutoModel.from_pretrained("Rostlab/prot_t5_xxl_bfd")
-model.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd')
+tokenizer = AutoTokenizer.from_pretrained("Rostlab/prot_bert_bfd_ss3")
+tokenizer.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_bert_bfd_ss3')
+model = AutoModelForTokenClassification.from_pretrained("Rostlab/prot_bert_bfd_ss3")
+model.save_pretrained("/scratch/gpfs/cmcwhite/hfmodels/prot_bert_bfd_ss3")
+
+  
+#tokenizer = AlbertTokenizer.from_pretrained("Rostlab/prot_t5_xxl_bfd")
+#tokenizer.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd')
+#model = AutoModel.from_pretrained("Rostlab/prot_t5_xxl_bfd")
+#model.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd')
 
 ##from transformers import AutoModelForSequenceClassification, BertTokenizer
 #tokenizer = BertTokenizer.from_pretrained('Rostlab/prot_t5_xxl_bfd')
 #tokenizer.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd')
 #model = AutoModelForSequenceClassification.from_pretrained('Rostlab/prot_t5_xxl_bfd')
-#model.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd')
+##model.save_pretrained('/scratch/gpfs/cmcwhite/hfmodels/prot_t5_xxl_bfd')

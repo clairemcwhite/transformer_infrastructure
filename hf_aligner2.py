@@ -60,15 +60,15 @@ def graph_from_distindex(index, dist):
           # Index should not return negative
           weight = dist[i,j]
           if weight < 0:
-             print("Index returned negative similarity, replacing with 0.001")
+             print("Index {}, {} returned negative similarity, replacing with 0.001".format(i,j))
              weight = 0.001
           edge = (i, index[i, j])
           #if edge not in order_edges:
           edges.append(edge)
           weights.append(weight)
 
-    #for i in range(len(edges)):
-    #  print(edges[i], weights[i])
+    for i in range(len(edges)):
+      print(edges[i], weights[i])
        
     G = igraph.Graph.TupleList(edges=edges, directed=False)
     G.es['weight'] = weights
@@ -76,9 +76,8 @@ def graph_from_distindex(index, dist):
 
 # If removing a protein leads to less of a drop in total edgeweight that other proteins
 
-def candidate_to_remove(G, v_names,z = -10):
+def candidate_to_remove(G, v_names,z = -3):
 
-    print("v_names", v_names)
     weights = {}  
     for i in v_names:
         # Potentially put in function
@@ -125,11 +124,11 @@ def graph_from_cluster_orders(cluster_orders_lol):
     return(G_order)
 
 def get_topological_sort(cluster_orders_lol):
-    print("start topological sort")
+    #print("start topological sort")
     cluster_orders_nonempty = [x for x in cluster_orders_lol if len(x) > 0]
-    with open("tester2.txt", "w") as f:
-       for x in cluster_orders_nonempty:
-          f.write("{}\n". format(x))
+    #with open("tester2.txt", "w") as f:
+    #   for x in cluster_orders_nonempty:
+    #      f.write("{}\n". format(x))
 
     
     dag_or_not = graph_from_cluster_orders(cluster_orders_nonempty).simplify().is_dag()
@@ -137,8 +136,6 @@ def get_topological_sort(cluster_orders_lol):
     
 
     print ("Dag or Not?, dag check immediately before topogical sort", dag_or_not)
-     # Something deletd from here? maybe a print
-    #if dag_or_not == False:
   
     G_order = graph_from_cluster_orders(cluster_orders_nonempty)
     G_order = G_order.simplify()
@@ -168,7 +165,6 @@ def remove_order_conflicts(cluster_order, seqs_aas, pos_to_clustid):
               print("Order violation", posid, clustid)
               bad_clustids.append(clustid)
    cluster_order =  [x for x in cluster_order if x not in bad_clustids]
-   #/print("remove_order_conflicts, after: ", cluster_order)
    return(cluster_order)
 def remove_order_conflicts2(cluster_order, seqs_aas,numseqs, pos_to_clustid):
     """ 
@@ -689,8 +685,8 @@ def squish_clusters_longrange2(alignment):
            #print("for aa {}, block = {}, and gap = {}".format(aa, dist_block, avail_gap))
 
           
-    print(cluster_order2)
-    print(clustid_to_clust) 
+    #print(cluster_order2)
+    #print(clustid_to_clust) 
 
     return(cluster_order2, clustid_to_clust)
 
@@ -765,6 +761,12 @@ def squish_clusters2(alignment, index, hidden_states, index_to_aa):
          edges.append((x[0], x[1]))
          weights.append(x[2])
     to_merge = []
+   
+    # Repititions deal with particular case 
+    # 1-2:0.5  2-3:0.4 3-4:0.3
+    # which simplifies to 
+    # 1-2:0.5 2-3:0.4
+    # (best hit for 2 best hit for 3)    
     for squish in [1,2, 3]:                   
    
         # Start with scores between adjacent clusters
@@ -800,7 +802,7 @@ def squish_clusters2(alignment, index, hidden_states, index_to_aa):
                #print(vertex)
                for e in maybe:
                   highest_edge = [x['name'] for x in sub_G.vs() if x.index  in e.tuple]
-                  print(highest_edge, max_weight)
+                  #print(highest_edge, max_weight)
                   #if max_weight > node_highest[highest_edge[0]]:
                   #      node_highest[highest_edge[0]] = max_weight
                   if highest_edge not in edges:
@@ -973,15 +975,28 @@ def remove_feedback_edges(cluster_orders_dict, clusters_filt, remove_both):
         if i in fas:
             to_remove.append([source_vertex, target_vertex])
         i = i + 1
-   
+    print("to_remove", to_remove)   
     # REMOVE all places where seqnum is inferred from order
     remove_dict = {}
    
     #print("cluster_orders_dict", cluster_orders_dict)
+    if remove_both == True: 
+        to_remove_flat = list(flatten(to_remove))
+    else:
+        to_remove_flat = [x[0] for x in to_remove]
+    print("to_remove 2", to_remove_flat)
+      
     
+ 
     for seqnum, clustorder in cluster_orders_dict.items():
+      remove_dict[seqnum] = []
       remove = []
+      if len(clustorder) == 1:
+          if clustorder[0] in to_remove_flat: 
+              remove_dict[seqnum] = [clustorder[0]]
       for j in range(len(clustorder) - 1):
+          
+
            if [clustorder[j], clustorder[j +1]] in to_remove:
                #print(cluster_orders[i])
                #print(remove_both) 
@@ -999,6 +1014,8 @@ def remove_feedback_edges(cluster_orders_dict, clusters_filt, remove_both):
          for aa in clusters_filt[i]:
             #print(aa)
             seqnum = aa.seqnum
+            #print(aa.seqnum)
+            
             remove_from = remove_dict[seqnum] 
             if i in remove_from:
                 print("removing ", i, seqnum) 
@@ -1371,19 +1388,15 @@ def get_besthits(D, I, seqnums, index_to_aa, padded_seqlen, minscore = 0.1 ):
                if len(scores) == 0:
                   continue
                ids = I[query_i][query_aa][target_i]
-               if query_seq in [4]:
-                    print(query_id)
-                    print("scores", scores)
-                    print("ids", ids)
+               #if query_seq in [4]:
+                    #print(query_id)
+                    #print("scores", scores)
+                    #print("ids", ids)
 
-               #print("IDS", ids) 
                bestscore = scores[0]
                bestmatch_id = ids[0]
 
                if bestscore >= minscore:
-                  # WHAT
-                  #if query_seq in [4]:
-                  #    print(["preckeck", query_id, bestmatch_id, bestscore])
                   hitlist.append([query_id, bestmatch_id, bestscore])
    #for x in hitlist:
    #    print("errorcheck", x)
@@ -1533,10 +1546,6 @@ def first_clustering(G, betweenness_cutoff = 0.45, minclustsize = 0, ignore_betw
             cluster_list= cluster_list  + sub_sub_connected_set
         
  
-    print("First pass clusters")
-    #for x in cluster_list:
-    #     print(x)
-    print("First pass done")
     return(cluster_list, hb_list)
 
 
@@ -1661,6 +1670,7 @@ def clusters_to_dag(clusters_filt, seqs_aas, remove_both = True, dag_reached = F
     #for x in clusters_filt:
     #     print(x)
     pos_to_clustid, clustid_to_clust = get_cluster_dict(clusters_filt, seqs_aas)
+    print("clustid_to_clust pre dag", clustid_to_clust)
     #print("test1")
     #print(pos_to_clustid)
     #print("test2")
@@ -1672,7 +1682,7 @@ def clusters_to_dag(clusters_filt, seqs_aas, remove_both = True, dag_reached = F
     #for i in cluster_orders:
     #      print(i)
           
-
+    print(cluster_orders_dict)
     #for i in range(len( cluster_orders)):
     #      print(seqs[i])
     #      print(cluster_orders[i])
@@ -1706,15 +1716,15 @@ def clusters_to_dag(clusters_filt, seqs_aas, remove_both = True, dag_reached = F
 
 
 def dag_to_cluster_order(cluster_orders_dict, seqs_aas, pos_to_clust_dag, clustid_to_clust_dag):
-    print("calling topo_sort from function")
+    #print("calling topo_sort from function")
 
-    with open("tester1.txt", "w") as f:
-       for x in cluster_orders_dict.values():
-          f.write("{}\n".format(x))
+    #with open("tester1.txt", "w") as f:
+    #   for x in cluster_orders_dict.values():
+    #      f.write("{}\n".format(x))
 
 
     cluster_order = get_topological_sort(list(cluster_orders_dict.values())) 
-    print("For each sequence check that the cluster order doesn't conflict with aa order")
+    #print("For each sequence check that the cluster order doesn't conflict with aa order")
     cluster_order = remove_order_conflicts(cluster_order, seqs_aas, pos_to_clust_dag)
 
 
@@ -1842,7 +1852,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, padding, exclude, d
 
                 clust_names = seq_cluster_G.vs()["name"]
                 print(clust_names)
-                cluster_to_exclude = candidate_to_remove(seq_cluster_G, clust_names, z = -5)
+                cluster_to_exclude = candidate_to_remove(seq_cluster_G, clust_names, z = -3)
                 print('name', to_exclude)
                 to_delete_ids = [v.index for v in seq_cluster_G.vs if v['name'] in cluster_to_exclude]
                 print('vertix_id', to_delete_ids)
@@ -1991,7 +2001,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
     # Still annoyingly slow
     D2, I2 = split_distances_to_sequence(D1, I1, seqnums, index_to_aa, numseqs, padded_seqlen) 
     #print(I2)
-    logging.info("get best hitlist")
+    #logging.info("get best hitlist")
     print("get best hitlist")
     minscore1 = minscore1
 
@@ -2004,7 +2014,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
     #print("hitlist_top")
     #for x in hitlist_top:
     #      print("hitlist_top", x)
-    logging.info("Get reciprocal best hits")
+    #logging.info("Get reciprocal best hits")
     print("Get reciprocal best hits")
     rbh_list = get_rbhs(hitlist_top) 
 
@@ -2062,21 +2072,22 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
          clusters_filt.append(cluster_filt)
     #for x in clusters_filt:
     #      print("cluster_filt1", x)
-    print("Get DAG of cluster orders, removing feedback loops")
+    print("Getting DAG of cluster orders, removing feedback loops")
 
     logging.info("Get DAG of cluster orders, removing feedback loops")
 
     dag_reached = False
     count = 0
 
-    # I don't think this is going
     while dag_reached == False:
       
        count = count + 1
        print("Dag finding attempt number {}".format(count))
-       if count > 20:
-           print("Dag not reached after {} iteractions".format(count))
+       # If length gets down to too, the dag will be reached, so this never will happen
+       if len(clusters_filt) < 2:
+           print("Dag not reached, no edges left to remove".format(count))
            return(1) 
+       
        cluster_orders, pos_to_clust, clustid_to_clust, clusters_filt, dag_reached = clusters_to_dag(clusters_filt, seqs_aas)
        print("Dag reached?", dag_reached) 
 
@@ -2526,7 +2537,6 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, seqnums, cluster_o
   
     hopelessly_unassigned = []
     for gap in unassigned:
-        print("BETWEEENNESS BTW", betweenness_cutoff)
         newer_clusters, newer_hopelessly_unassigned = address_unassigned(gap, seqs, seqs_aas, seqnums, pos_to_clustid, cluster_order, clustid_to_clust, numseqs, I2, D2, minscore = minscore, ignore_betweenness = ignore_betweenness, betweenness_cutoff = betweenness_cutoff)
 
         new_clusters  = new_clusters + newer_clusters
@@ -2556,7 +2566,7 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, seqnums, cluster_o
                 new_additions.append(pos)
          #print("posids", posids)                  
          if len(list(set(clustids))) > 1:
-            print("new cluster contains component of multiple previous clusters. Keeping largest matched cluster")
+            #print("new cluster contains component of multiple previous clusters. Keeping largest matched cluster")
             clustcounts = Counter(clustids)
             largest_clust = max(clustcounts, key=clustcounts.get)   
             sel_pos = [posids[x] for x in range(len(posids)) if clustids[x] == largest_clust]
@@ -2565,7 +2575,7 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, seqnums, cluster_o
                 
          else:
             new_clusters_filt.append(clust)             
-    print("diagnose step 2")
+    #print("diagnose step 2")
 
     #for x in new_clusters_filt:
     #   print("new cluster", x)
@@ -2593,10 +2603,8 @@ def fill_in_unassigned(unassigned, seqs, seqs_aas, seq_names, seqnums, cluster_o
 
     while dag_reached == False:
 
-       count = count + 1
-       print("Post gapfilling Dag finding attempt number {}".format(count))
-       if count > 20:
-           print("Post gapfilling Dag not reached after {} iteractions".format(count))
+       if len(clusters_merged) < 2:
+           print("Dag not reached, no edges left to remove".format(count))
            return(1)
        #cluster_orders_dag, pos_to_clust_dag, clustid_to_clust_dag, clusters_filt, dag_reached = clusters_to_dag(clusters_filt, seqs_aas)
        cluster_orders_merge, pos_to_clust_merge, clustid_to_clust_merge, clusters_merged, dag_reached = clusters_to_dag(clusters_merged, seqs_aas, remove_both = True)
@@ -2643,6 +2651,12 @@ def get_align_args():
     parser.add_argument("-fx", "--fully_exclude", dest = "fully_exclude", action = "store_true",
                         help="Additionally exclude outlier sequences from final alignment")
 
+    parser.add_argument("-l", "--layers", dest = "layers", nargs="+", type=int, default = [-4,-3,-2,-1],
+                        help="Additionally exclude outlier sequences from final alignment")
+    parser.add_argument("-m", "--model", dest = "model_name",  type=str, required = True,
+                        help="Model name or path to local model")
+
+
 
 
      
@@ -2662,7 +2676,10 @@ if __name__ == '__main__':
     outfile = args.out_path
     exclude = args.exclude
     fully_exclude = args.fully_exclude
-   
+    layers = args.layers
+    model_name = args.model_name
+
+
  
     # Keep to demonstrate effect of clustering or not
     do_clustering = True
@@ -2680,7 +2697,7 @@ if __name__ == '__main__':
 
     #logging.info("Check for torch")
     #logging.info(torch.cuda.is_available())
-    model_name = '/scratch/gpfs/cmcwhite/prot_bert_bfd'
+    #model_name = '/scratch/gpfs/cmcwhite/prot_bert_bfd'
 
     #fasta = '/scratch/gpfs/cmcwhite/aln_datasets/quantest2/QuanTest2/Test/zf-CCHH.vie'
     #fasta = '/scratch/gpfs/cmcwhite/aln_datasets/quantest2/QuanTest2/Test/Ribosomal_L1.vie'
@@ -2710,7 +2727,7 @@ if __name__ == '__main__':
  
     
     #layers = [ -4, -3,-2, -1]
-    layers = [-4, -3, -2, -1]
+    #layers = [-4, -3, -2, -1]
     #layers = [-4, -3, -2, -1]
    #model, tokenizer = load_model(model_name)
 
@@ -2735,10 +2752,11 @@ if __name__ == '__main__':
                                     seqlens = seqlens,
                                     get_sequence_embeddings = True,
                                     get_aa_embeddings = True,
+                                    layers = layers,
                                     padding = padding)
 
    
-     
+    print(embedding_dict['aa_embeddings']) 
     cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, cluster_hstates_list, to_exclude = get_seq_groups(seqs_spaced ,seq_names, embedding_dict, logging, padding, exclude, do_clustering)
 
 

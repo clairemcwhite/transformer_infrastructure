@@ -1,4 +1,3 @@
-#from sentence_transformers import SentenceTransformer, models
 from transformers import AutoTokenizer, AutoModel
 from transformer_infrastructure.pca_embeddings import control_pca, load_pcamatrix, apply_pca
 import torch
@@ -9,7 +8,7 @@ import argparse
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 #import numba as nb
-import awkward as ak
+#import awkward as ak
 import time
 
 '''
@@ -107,7 +106,8 @@ def get_embed_args():
                         help= "Optional: Use a pretrained PCA matrix to reduce dimensions of amino acid embeddings (pickle file with objects pcamatrix and bias")
     parser.add_argument("-r", "--use_ragged_arrays", dest = "ragged_arrays", action = "store_true", required = False,
                         help= "Optional: Use package 'awkward' to save ragged arrays fo amino acid embeddings")
-
+    parser.add_argument("-l", "--layers", dest = "layers", nargs="+", type=int, default = [-4,-3,-2,-1],
+                        help="Additionally exclude outlier sequences from final alignment")
     args = parser.parse_args()
     
     return(args)
@@ -191,7 +191,7 @@ def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""
     aa_embeddings = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
     if padding:
         aa_embeddings = aa_embeddings[:,padding:-padding,:]
-        print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
+        #print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
     return(aa_embeddings, aa_embeddings.shape)
 
 
@@ -270,14 +270,14 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                          ex ["M E T", "S E Q"]
  
    '''
-
-    ak.numba.register()
+    if ragged_arrays == True:
+       ak.numba.register()
     print("CUDA available?", torch.cuda.is_available())
 
     model, tokenizer = load_model(model_path)
     print("Model loaded?")
 
-
+    print(seqlens)
     aa_shapes = [] 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device", device) 
@@ -357,7 +357,7 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                     aa_embed_ak_intermediate_list = []
                     for j in range(len(aa_embeddings)):
                          seqindex = (batch_size * count) + j
-                         print(count, j, seqindex, seqlens[seqindex])
+                         #print(count, j, seqindex, seqlens[seqindex])
                          #print(aa_embeddings[j])
                          aa_embed_trunc = aa_embeddings[j][:seqlens[seqindex], :]
                     
@@ -406,6 +406,8 @@ if __name__ == "__main__":
     args = get_embed_args()
 
 
+
+   
     if args.get_sequence_embeddings == False:
          if args.get_aa_embeddings == False:
              print("Must add --get_sequence_embeddings and/or --get_aa_embeddings, otherwise nothing to compute")
@@ -421,16 +423,20 @@ if __name__ == "__main__":
 
     else: 
        padding = 0
+    
     #print(sequences_spaced)
+    layers = args.layers
     embedding_dict = get_embeddings(sequences_spaced, 
                                     args.model_path, 
                                     get_sequence_embeddings = args.get_sequence_embeddings, 
                                     get_aa_embeddings = args.get_aa_embeddings, 
                                     padding = padding, 
                                     seqlens = seqlens,
+                                    layers = layers,
                                     ragged_arrays = args.ragged_arrays,
                                     aa_pcamatrix_pkl = args.aa_pcamatrix_pkl, 
                                     sequence_pcamatrix_pkl = args.sequence_pcamatrix_pkl)
+   
     # Reduce sequence dimension with a new pca transform 
     if args.sequence_target_dim:
        pkl_pca_out = "{}.sequence.{}dim.pcamatrix.pkl".format(args.fasta_path, args.sequence_target_dim)

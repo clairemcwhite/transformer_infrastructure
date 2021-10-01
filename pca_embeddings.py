@@ -138,7 +138,7 @@ def apply_pca(hidden_states, pcamatrix, bias):
     '''
 
     reduced = np.array(hidden_states) @ pcamatrix.T + bias
-    print(reduced)
+    #print(reduced)
     return(reduced)
 
 def load_pcamatrix(pkl_pca_in):
