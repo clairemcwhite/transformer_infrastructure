@@ -3,6 +3,7 @@
 import torch
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
+
 import random
 from transformer_infrastructure.hf_utils import build_index_flat, build_index_voronoi
 from transformer_infrastructure.run_tests import run_tests
