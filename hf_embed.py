@@ -7,6 +7,8 @@ import pickle
 import argparse
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+
+from sentence_transformers import LoggingHandler, SentenceTransformer, models, evaluation
 #import numba as nb
 #import awkward as ak
 import time
@@ -503,46 +505,46 @@ if __name__ == "__main__":
     
     
 # Would like to use SentenceTransformers GPU parallelization, but only currently can do sequence embeddings. Need to do adapt it
-#def embed_sequences(model_path, sequences, extra_padding,  pkl_out):
-#    '''
-#    
-#    Get a pkl of embeddings for a list of sequences using a particular model
-#    Embeddings will have shape xx
-#
-#    Takes:
-#       model_path (str): Path to a particular transformer model
-#                         ex. "prot_bert_bfd"
-#       sequences (list): List of sequences with a space between each acids.  
-#                         ex ["M E T", "S E Q"]
-#       pkl_out (str)   : Filename of output pickle of embeddings
-# 
-#    '''
-#    print("Create word embedding model")
-#    word_embedding_model = models.Transformer(model_path)
-#
-#    # Default pooling strategy
-#    pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension())
-#
-#    model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
-#    print("SentenceTransformer model created")
-#    
-#    pool = model.start_multi_process_pool()
-#
-#    # Compute the embeddings using the multi-process pool
-#    # about 1.5 hours to this step with 4 GPU and 1.4 million sequences 
-#    print("Computing embeddings")
-#
-#    e = model.encode(sequences, output_value = 'token_embeddings')
-#    print(e)
-#
-#    embeddings = model.encode_multi_process(sequences, pool, output_value = 'token_embeddings')
-#
-#    print("Embeddings computed. Shape:", embeddings.shape)
-#
-#    #Optional: Stop the proccesses in the pool
-#    model.stop_multi_process_pool(pool)
-#
-#    return(embeddings)    
+def embed_sequences(model_path, sequences, extra_padding,  pkl_out):
+    '''
+    
+    Get a pkl of embeddings for a list of sequences using a particular model
+    Embeddings will have shape xx
+
+    Takes:
+       model_path (str): Path to a particular transformer model
+                         ex. "prot_bert_bfd"
+       sequences (list): List of sequences with a space between each acids.  
+                         ex ["M E T", "S E Q"]
+       pkl_out (str)   : Filename of output pickle of embeddings
+ 
+    '''
+    print("Create word embedding model")
+    word_embedding_model = models.Transformer(model_path)
+
+    # Default pooling strategy
+    pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension())
+
+    model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
+    print("SentenceTransformer model created")
+    
+    #pool = model.start_multi_process_pool()
+
+    # Compute the embeddings using the multi-process pool
+    # about 1.5 hours to this step with 4 GPU and 1.4 million sequences 
+    print("Computing embeddings")
+
+    embeddings = model.encode(sequences, output_value = 'token_embeddings')
+    #print(e)
+
+    #embeddings = model.encode_multi_process(sequences, pool, output_value = 'token_embeddings')
+
+    print("Embeddings computed. Shape:", embeddings.shape)
+
+    #Optional: Stop the proccesses in the pool
+    #model.stop_multi_process_pool(pool)
+
+    return(embeddings)    
    
 
 

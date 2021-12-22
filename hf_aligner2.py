@@ -5,7 +5,6 @@ from transformers import AutoTokenizer, AutoModel
 import numpy as np
 
 from transformer_infrastructure.hf_utils import build_index
-from transformer_infrastructure.run_tests import run_tests
 from transformer_infrastructure.hf_embed import parse_fasta_for_embed, get_embeddings 
 
 from Bio import SeqIO
