@@ -1,13 +1,18 @@
 from Bio import SeqIO
-#import torch
+
+import torch
+
 import faiss
-#import numpy as np
+import numpy as np
 ### Sequence formatting
+
 def format_sequence(sequence, add_spaces = True):
+
    if add_spaces == False:
        seq_spaced = sequence
+
    else:
-       seq_spaced =  " ".join(sequence)
+       seq_spaced = sequence
 
    return seq_spaced
 
