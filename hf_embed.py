@@ -304,11 +304,11 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
        model = model.to(device)
 
     # Definitly needs to be batched, otherwise GPU memory errors
-    if torch.cuda.device_count():
-       batch_size = torch.cuda.device_count()
-    else:
-       batch_size = 1
-
+    #if torch.cuda.device_count():
+    #   batch_size = torch.cuda.device_count()
+    #else:
+    #   batch_size = 1
+    batch_size = 1
     collate = Collate(tokenizer=tokenizer)
 
     data_loader = DataLoader(dataset=ListDataset(seqs),
@@ -386,8 +386,10 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                 else:
                     # If not using ragged arrays, must pad to same dim as longest sequence
                     # print(maxlen - (aa_embeddings.shape[1] - 1))
-                    if padding:
-                         dim2 = maxlen - (aa_embeddings.shape[1])
+                    #if padding:
+                    dim2 = maxlen - (aa_embeddings.shape[1])
+                    #else:
+                         #dim2 = maxlen 
                     npad = ((0,0), (0, dim2), (0,0))
                     print(npad)
                     print(maxlen, aa_embeddings.shape[1])
