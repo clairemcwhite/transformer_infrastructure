@@ -1,13 +1,16 @@
 from Bio import SeqIO
+
 import torch
+
 import faiss
 import numpy as np
 ### Sequence formatting
 
 def format_sequence(sequence, add_spaces = True):
 
-   if add_spaces:
-       seq_spaced =  " ".join(sequence)
+   if add_spaces == False:
+       seq_spaced = sequence
+
    else:
        seq_spaced = sequence
 
@@ -59,7 +62,7 @@ def get_sequencelabel_tags(labels):
 
 
 ### Similarity
-def build_index(hidden_states):
+def build_index_flat(hidden_states):
 
     # ISSUE ex. ghf34, where negative returned
     d = hidden_states.shape[1]
@@ -70,6 +73,31 @@ def build_index(hidden_states):
     faiss.normalize_L2(hidden_states)
     index.add(hidden_states)
     return(index)
+
+def build_index_voronoi(hidden_states, seqlens):
+
+    d = hidden_states.shape[1]
+
+    nlist = int(max(seqlens)/20)
+    nprobe = 3 # 
+    print("nlist = ", nlist)
+    print("nprobe = ", nprobe)
+
+    ##PQ(quantizer, d, nlist, m, bits)
+      #quantizer = faiss.IndexHNSWFlat(d, 32)
+    quantizer = faiss.IndexFlatL2(d)  # the other index
+    #index = faiss.IndexIVFPQ(quantizer, d, nlist, 8,8, faiss.METRIC_INNER_PRODUCT)
+    index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT)
+    assert not index.is_trained
+    
+    faiss.normalize_L2(hidden_states)
+    index.train(hidden_states)
+    assert index.is_trained
+    index.add(hidden_states)
+    index.nprobe = nprobe
+
+    return(index)
+
 
 def get_knn(index, hidden_states, k):
     distance, index = index.search(hidden_states, k)

@@ -134,21 +134,25 @@ def parse_fasta_for_embed(fasta_path, truncate = None, extra_padding = True):
        
        seq = record.seq
 
-       #if extra_padding == True: 
-       #    seq = "XXXXX{}XXXXX".format(seq)
+       if extra_padding == True: 
+           seq = "XXXXX{}XXXXX".format(seq)
        if truncate:
           print("truncating to {}".format(truncate))
           seq = seq[0:truncate]
  
        seq_spaced =  " ".join(seq)
-       # 5 X's seems to be a good amount of neutral padding
        if extra_padding == True:
-            padding_aa = " X" * 5
-            padding_left = padding_aa.strip(" ")
+          seq = seq[5:]
+          seq = seq[:-5]
+
+       # 5 X's seems to be a good amount of neutral padding
+       #if extra_padding == True:
+       #     padding_aa = " X" * 5
+       #     padding_left = padding_aa.strip(" ")
     
             # To do: Figure out why embedding are better with removed space between last X and first AA?
-            seq_spaced = padding_left + seq_spaced  
-            seq_spaced = seq_spaced + padding_aa
+       #     seq_spaced = padding_left + seq_spaced  
+       #     seq_spaced = seq_spaced + padding_aa
   
        ids.append(record.id)
        sequences.append(seq)
@@ -191,9 +195,16 @@ def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""
     hidden_states = model_output.hidden_states
     # Concatenate hidden states into long vector
     aa_embeddings = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
+    print("pre", aa_embeddings.shape)
     if padding:
-        aa_embeddings = aa_embeddings[:,padding:-padding,:]
-        #print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
+        # to remove CLS + XXXXX + XXXXX + SEP
+        trim = 6
+    else:
+         # to remove CLS + SEP 
+         trim = 1
+    aa_embeddings = aa_embeddings[:,trim:-trim,:]
+    print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
+
     return(aa_embeddings, aa_embeddings.shape)
 
 
@@ -277,8 +288,8 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
     print("CUDA available?", torch.cuda.is_available())
 
     model, tokenizer = load_model(model_path)
-    print("Model loaded?")
-
+    print("Model loaded")
+    print("seqs", seqs)
     print(seqlens)
     aa_shapes = [] 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -326,6 +337,11 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
     # Awkward arrays allow concatenating ragged arrays
     count = 0
     maxlen = max(seqlens)
+    print("padding", padding)
+    print('maxlen', maxlen)
+    #if padding:
+    #   maxlen = maxlen + 10
+    
     numseqs = len(seqs)
     with torch.no_grad():
 
@@ -372,7 +388,11 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                 else:
                     # If not using ragged arrays, must pad to same dim as longest sequence
                     # print(maxlen - (aa_embeddings.shape[1] - 1))
-                    npad = ((0,0), (0, maxlen - (aa_embeddings.shape[1] - 1)), (0,0))
+                    if padding:
+                         dim2 = maxlen - (aa_embeddings.shape[1])
+                    npad = ((0,0), (0, dim2), (0,0))
+                    print(npad)
+                    print(maxlen, aa_embeddings.shape[1])
                     aa_embeddings = np.pad(aa_embeddings, npad)
                     aa_array_list.append(aa_embeddings)
 
