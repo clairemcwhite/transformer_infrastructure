@@ -108,8 +108,11 @@ def get_embed_args():
                         help= "Optional: Use a pretrained PCA matrix to reduce dimensions of amino acid embeddings (pickle file with objects pcamatrix and bias")
     parser.add_argument("-r", "--use_ragged_arrays", dest = "ragged_arrays", action = "store_true", required = False,
                         help= "Optional: Use package 'awkward' to save ragged arrays fo amino acid embeddings")
-    parser.add_argument("-l", "--layers", dest = "layers", nargs="+", type=int, default = [-4,-3,-2,-1],
+    parser.add_argument("-l", "--layers", dest = "layers", nargs="+", type=int, required = False,
                         help="Additionally exclude outlier sequences from final alignment")
+    parser.add_argument("-hds", "--heads", dest = "heads", required = False,
+                        help="Additionally exclude outlier sequences from final alignment")
+
     args = parser.parse_args()
     
     return(args)
@@ -173,7 +176,58 @@ def mean_pooling(model_output, attention_mask):
     sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
     return sum_embeddings / sum_mask
 
-def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""):
+def headnames_to_index(headnames, heads_per_layer = 16):
+      '''
+      Convert layer0_head0 to index (output of split_index) 
+      '''
+      heads = []
+      for headname in headnames:
+          #print(headname)
+          layer_tmp = headname.split("_")[0]
+          head_tmp = headname.split("_")[1]
+          layer = int(layer_tmp.replace("layer", ""))
+          head= int(head_tmp.replace("head", ""))
+          head_index  = (heads_per_layer * layer) + head   
+          heads.append(head_index)
+      return(heads)
+
+
+def split_hidden_states(hidden_states, head_len = 64, aa_dim = 0 ):
+    '''
+    Splits a concatenation of all the layers into heads
+    '''
+    
+    head_ids = []
+    numaas = hidden_states.shape[aa_dim]
+    #seqlen = hidden_states.shape[1]
+    num_heads = hidden_states.shape[aa_dim + 1]/head_len
+    num_layers = hidden_states.shape[aa_dim + 1]/1024
+    heads_per_layer = int(1024/head_len)
+    #print('num_heads', num_heads)
+    #print('num_layers', num_layers)
+    for layer in range(0,int(num_layers)):
+        for head in range(0,int(heads_per_layer)):
+           head_ids.append('layer{}_head{}'.format(layer, head))
+    if aa_dim ==0: 
+       hstates_heads = hidden_states.reshape(numaas, -1, head_len)
+       #print(hstates_heads.shape)
+       hstates_split = np.split(hstates_heads, num_heads, axis = 1)
+       #print(hstates_split[0].shape)
+       hstates_split = [x.reshape(numaas,  head_len) for x in hstates_split]
+       #print(hstates_split[0].shape)
+    if aa_dim == 1:
+       num_seqs = hidden_states.shape[0]
+       hstates_split = hidden_states.reshape(num_seqs, numaas, -1, head_len)
+       #print(hstates_split.shape)
+       #hstates_split = np.split(hstates_heads, num_heads, axis = (aa_dim + 1))
+       #print(hstates_split[0].shape)
+       #hstates_split = [x.reshape(num_seqs, numaas,  head_len) for x in hstates_split]
+       #print(hstates_split[0].shape)
+      
+
+    return(hstates_split, head_ids)
+
+def retrieve_aa_embeddings(model_output, layers = None, padding = "", heads = None):
     '''
     Get the amino acid embeddings for each sequences
     Pool layers by concatenating selection of layers
@@ -183,6 +237,7 @@ def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""
     Takes: 
        model_output: From sequence encoding
        layers (list of ints): By default, pool final four layers of model
+       heads (list of specific heads): format head1_layer1, head2_layer2, etc. indexed from 1
        padding (int): If padding was added, remove embeddings corresponding to extra padding before returning 
 
     Return shape (numseqs x longest seqlength x (1024 * numlayers)
@@ -194,7 +249,31 @@ def retrieve_aa_embeddings(model_output, layers = [-4, -3, -2, -1], padding = ""
     # Get all hidden states
     hidden_states = model_output.hidden_states
     # Concatenate hidden states into long vector
-    aa_embeddings = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
+
+    # Either layers or heads
+    if layers is not None:
+        aa_embeddings = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
+        #print(aa_embeddings)
+        print(aa_embeddings.shape)
+
+
+    if heads is not None: 
+        print("selecting heads", heads)
+        head_indices = headnames_to_index(heads, heads_per_layer = 16)
+        #print(len(hidden_states))
+        aa_embeddings = torch.cat(tuple([hidden_states[i] for i in list(range(-31, 0))]), dim = -1)
+        print("full concatenation", aa_embeddings.shape)
+         
+        # Tensor must be copied to host cpu
+        aa_embeddings_split, head_ids = split_hidden_states(np.array(aa_embeddings.cpu()), head_len = 64, aa_dim = 1)
+        #print("split embedding_shape", aa_embeddings_split.shape)
+        aa_embeddings_sel = np.take(aa_embeddings_split, head_indices, axis = 2)
+        #print(aa_embeddings_sel.shape)
+        aa_embeddings = aa_embeddings_sel.reshape(aa_embeddings_sel.shape[0], aa_embeddings_sel.shape[1], len(head_indices)*aa_embeddings_sel.shape[3])
+        #print(aa_embeddings.shape) 
+        aa_embeddings = torch.from_numpy(aa_embeddings)
+        #aa_embeddings = torch.cat(tuple([aa_embeddings_split[i] for i in head_indices]), dim = -1)
+
     print("pre", aa_embeddings.shape)
     if padding:
         # to remove CLS + XXXXX + XXXXX + SEP
@@ -272,7 +351,7 @@ class ListDataset(Dataset):
 #    return builder
 
 
-def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, get_aa_embeddings = True, layers = [-4, -3, -2, -1], padding = 5, ragged_arrays = False, aa_pcamatrix_pkl = None, sequence_pcamatrix_pkl = None):
+def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, get_aa_embeddings = True, padding = 5, ragged_arrays = False, aa_pcamatrix_pkl = None, sequence_pcamatrix_pkl = None, heads = None, layers = None):
     '''
     Encode sequences with a transformer model
 
@@ -364,7 +443,7 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                 sequence_array_list.append(sequence_embeddings)
  
             if get_aa_embeddings == True:
-                aa_embeddings, aa_shape = retrieve_aa_embeddings(model_output, layers = layers, padding = padding)
+                aa_embeddings, aa_shape = retrieve_aa_embeddings(model_output, layers = layers, heads = heads, padding = padding)
                 aa_embeddings = aa_embeddings.to('cpu')
                 aa_embeddings = np.array(aa_embeddings)
                 if aa_pcamatrix_pkl:
@@ -450,6 +529,20 @@ if __name__ == "__main__":
     
     #print(sequences_spaced)
     layers = args.layers
+    heads = args.heads
+
+    if heads is not None:
+       with open(heads, "r") as f:
+         headnames = f.readlines()
+         print(headnames)
+         headnames = [x.replace("\n", "") for x in headnames]
+
+         print(headnames)
+    else:
+       headnames = None
+
+
+
     embedding_dict = get_embeddings(sequences_spaced, 
                                     args.model_path, 
                                     get_sequence_embeddings = args.get_sequence_embeddings, 
@@ -457,6 +550,7 @@ if __name__ == "__main__":
                                     padding = padding, 
                                     seqlens = seqlens,
                                     layers = layers,
+                                    heads = headnames,
                                     ragged_arrays = args.ragged_arrays,
                                     aa_pcamatrix_pkl = args.aa_pcamatrix_pkl, 
                                     sequence_pcamatrix_pkl = args.sequence_pcamatrix_pkl)

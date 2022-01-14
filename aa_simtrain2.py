@@ -14,6 +14,8 @@ import torch
 from torch import nn
 
 import re
+from transformer_infrastructure.hf_utils import AA
+
 
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
@@ -51,23 +53,11 @@ def get_aasim_args():
 
     parser.add_argument("-l", "--layers", dest = "layers", nargs="+", type=int, default = [-4,-3,-2,-1],
                         help="Which layers")       #layers = [-4,-3,-2,-1]
-    #embs = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
-#parser.add_argument("-tsfasta", "--testfastas", dest = "test_fastas", type = str, required = True,
-    #                    help="Path to file containing one fasta file per line. Each fasta corresponds to one gold standard alignment")
-
-    #parser.add_argument("-tsaln", "--testalns", dest = "test_alns", type = str, required = True,
-    #                    help="Path to files containine one gold standard alignment file in fasta format per line, with dashes for gaps")
-
     parser.add_argument("-o", "--outdir", dest = "outdir", type = str, required = True,
                         help="Output directory to save final model")
 
 
-    #parser.add_argument("-d", "--dev", dest = "dev_path", type = str, required = True,
-    #                    help="Path to dev/validation set (used during training), containing columns named sequence1,sequence2,id1,id2,label (set label colname with --label_col) (csv)")
-    #parser.add_argument("-te", "--test", dest = "test_path", type = str, required = True,
-    #                    help="Path to withheld test set (used after training), containing columns named sequence1,sequence2,id1,id2,label (set label colname with --label_col) (csv)")
-    #parser.add_argument("-o", "--outdir", dest = "outdir", type = str, required = True,
-    #                    help="Name of output directory")
+    # Training arguments
     parser.add_argument("-maxl", "--maxseqlength", dest = "max_length", type = int, required = False, default = 1024,
                         help="Truncate all sequences to this length (default 1024). Reduce if memory errors")
     parser.add_argument("-n", "--expname", dest = "expname", type = str, required = False, default = "transformer_run",
@@ -78,9 +68,9 @@ def get_aasim_args():
                         help="Per device train batchsize. Reduce along with val batch size if memory error")
     parser.add_argument("-dvbsize", "--dev_batchsize", dest = "dev_batchsize", type = int, required = False, default = 5,
                         help="Per device validation batchsize. Reduce if memory error")
-    parser.add_argument("-fs", "--fasta_suffix", dest = "fasta_suffix", type = str, required = False,
+    parser.add_argument("-fs", "--fasta_suffix", dest = "fasta_suffix", type = str, required = False, default = ".fasta",
                         help="File ending for recovering prot names .fasta for prot.fasta")
-    parser.add_argument("-as", "--aln_suffix", dest = "aln_suffix", type = str, required = False,
+    parser.add_argument("-as", "--aln_suffix", dest = "aln_suffix", type = str, required = False, default = ".aln",
                         help="File ending for recovering prot names .aln for prot.aln")
 
 
@@ -108,7 +98,7 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
                    aln_record_dict[alignment[i].id] = str(alignment[i].seq)
                    aln_seqnames.append(alignment[i].id)
              alndict[protgroup] = aln_record_dict    
-    print(alndict)
+    #print(alndict)
 
     seqdict = {}
     with open(fasta_list, "r") as f:
@@ -125,7 +115,7 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
              # Only first three sequences are in the gold standard
              #print(seq_names)
              for i in range(max_records ):
-                    print(i)
+                    #print(i)
                     try:
                         if seq_names[i] in aln_seqnames: 
     
@@ -147,19 +137,23 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
     pos2 =[]
     seqnames1 =[]
     seqnames2 =[]
+    aas1 = [] # Not used for training, but used in other processes
+    aas2 = []
+
     labels = []
- 
+    
    
-     
     for protgroup in allprots:
         prot_seqs =seqdict[protgroup]
         prot_alns =alndict[protgroup]
-        allseqnames = prot_seqs.keys()
+        allseqnames = list(prot_seqs.keys())
         complete = []
-        for seqname1 in allseqnames:
+        for seqname_i in range(len(allseqnames)):
+           seqname1 = allseqnames[seqname_i]
               
            complete.append(seqname1)
-           for seqname2 in allseqnames:
+           for seqname_j in range(len(allseqnames)):
+               seqname2 = allseqnames[seqname_j]
                if seqname2 in complete:
                     continue                
                seq1 = prot_seqs[seqname1]
@@ -174,6 +168,9 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
                seqpos2 = 0
                equi_positions = []
                for i in range(len(aln1)):
+                  
+                   aa1 = AA()
+                   aa2 = AA()      
                    char1 = aln1[i]
                    char2 = aln2[i]
                    #print(char1, char2)
@@ -183,6 +180,7 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
                       if seqpos1 <= max_length-2:
                           if seqpos2 <= max_length - 2:
                               equi_positions.append([seqpos1, seqpos2])
+
 
                    if char1 != "-":
                       seqpos1 = seqpos1 + 1
@@ -199,7 +197,7 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
                seq2_fixed = list(seq2_fixed)[:max_length-2]             
 
 
-               print(seqname1, seqname2)
+               #print(seqname1, seqname2)
                for equi  in equi_positions:
   
                    #print(equi)
@@ -211,7 +209,19 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
                    seqnames1.append(seqname1)
                    seqnames2.append(seqname2)
                    labels.append(1)
+                   aa1 = AA()
+                   aa1.seqpos = equi[0]
+                   aa1.seqnames = seqname1
+                   aa1.seqaa  = seq1_fixed[equi[0]]
+                   aa1.seqnum = seqname_i
+                   aa2 = AA()
+                   aa2.seqpos = equi[1]
+                   aa2.seqnames = seqname2
+                   aa2.seqaa  = seq2_fixed[equi[1]]
+                   aa2.seqnum= seqname_j
 
+                   aas1.append(aa1)
+                   aas2.append(aa2)
                    
 
 
@@ -228,11 +238,23 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
                    seqnames1.append(seqname1)
                    seqnames2.append(seqname2)
                    labels.append(0)
+                   aa1 = AA()
+                   aa1.seqpos = non_equi[0]
+                   aa1.seqnames = seqname1
+                   aa1.seqaa  = seq1_fixed[non_equi[0]]
+                   aa1.seqnum = seqname_i
+                   aa2 = AA()
+                   aa2.seqpos = non_equi[1]
+                   aa2.seqnames = seqname2
+                   aa2.seqaa  = seq2_fixed[non_equi[1]]
+                   aa2.seqnum= seqname_j
+                   aas1.append(aa1)
+                   aas2.append(aa2)
 
                # Make close negatives, one after correct second position
                for i in range(len(equi_positions)):
                    equi = equi_positions[i]
-                   if equi[1] < len(seq2_fixed):
+                   if (equi[1]  + 1) < len(seq2_fixed): # Change post training
                        protnames.append(protgroup) 
                        seqs1.append(seq1_fixed)
                        seqs2.append(seq2_fixed)
@@ -241,6 +263,21 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
                        seqnames1.append(seqname1)
                        seqnames2.append(seqname2)
                        labels.append(0)
+                       aa1 = AA()
+                       aa1.seqpos = equi[0]
+                       aa1.seqnames = seqname1
+                       aa1.seqaa  = seq1_fixed[equi[0]]
+                       aa2 = AA()
+                       aa2.seqpos = equi[1] + 1
+                       aa2.seqnames = seqname2
+                       aa2.seqaa  = seq2_fixed[equi[1] + 1]
+                       aa1.seqnum = seqname_i
+                       aa2.seqnum = seqname_j
+
+
+                       aas1.append(aa1)
+                       aas2.append(aa2)
+
                # Make close negatives, one before correct second position
                for i in range(len(equi_positions)):
                    equi = equi_positions[i]
@@ -253,11 +290,24 @@ def load_dataset_alnpairs(fasta_list, aln_list, max_length, aln_suffix, fasta_su
                        seqnames1.append(seqname1)
                        seqnames2.append(seqname2)
                        labels.append(0)
-                   
+                       aa1 = AA()
+                       aa1.seqpos = equi[0]
+                       aa1.seqnames = seqname1
+                       aa1.seqaa  = seq1_fixed[equi[0]]
+                       aa2 = AA()
+                       aa2.seqpos = equi[1] -1
+                       aa2.seqnames = seqname2
+                       aa2.seqaa  = seq2_fixed[equi[1] -1 ]
+                       aa1.seqnum = seqname_i
+                       aa2.seqnum = seqname_j
+                       aas1.append(aa1)
+                       aas2.append(aa2)
+
+                  
 
 
                      #trainset.append([seq1, seq2, equi[0], equi[1], seqname1, seqname2])
-    return(protnames, seqs1, seqs2, pos1, pos2, labels, seqnames1, seqnames2 )     
+    return(protnames, seqs1, seqs2, pos1, pos2, aas1, aas2, labels, seqnames1, seqnames2 )     
 
 
 def encode_tags(labels, labels1, encodings1, labels2, encodings2, max_length):
@@ -382,7 +432,7 @@ class AlignDataset(Dataset):
 def load_datasets(train_fastas, train_alns, dev_fastas, dev_alns, train_batchsize, dev_batchsize, aln_suffix, fasta_suffix):
 
     print(aln_suffix, fasta_suffix)
-    train_protnames, train_seqs1, train_seqs2, train_pos1, train_pos2, train_labels, train_seqnames1, train_seqnames2 = load_dataset_alnpairs(train_fasta_list, train_aln_list,  int(max_length/2), aln_suffix, fasta_suffix) 
+    train_protnames, train_seqs1, train_seqs2, train_pos1, train_pos2, train_aas1, train_aas2, train_labels, train_seqnames1, train_seqnames2 = load_dataset_alnpairs(train_fasta_list, train_aln_list,  int(max_length/2), aln_suffix, fasta_suffix) 
 
 
 
@@ -407,6 +457,9 @@ def load_datasets(train_fastas, train_alns, dev_fastas, dev_alns, train_batchsiz
     outtrain['pos1'] = train_pos1
     outtrain['pos2'] = train_pos2
     outtrain['label'] = train_labels
+    outtrain['aas1'] = train_aas1
+    outtrain['aas2'] = train_aas2
+
     outtrain.to_csv(os.path.join(outdir, "traindata.csv"), index=False)
 
 
@@ -497,7 +550,7 @@ def load_datasets(train_fastas, train_alns, dev_fastas, dev_alns, train_batchsiz
 
 
     # Dev set
-    dev_protnames, dev_seqs1, dev_seqs2, dev_pos1, dev_pos2, dev_labels, dev_seqnames1, dev_seqnames2 = load_dataset_alnpairs(dev_fasta_list, dev_aln_list,  int(max_length/2), aln_suffix, fasta_suffix) 
+    dev_protnames, dev_seqs1, dev_seqs2, dev_pos1, dev_pos2, dev_aas1, dev_aas2, dev_labels, dev_seqnames1, dev_seqnames2 = load_dataset_alnpairs(dev_fasta_list, dev_aln_list,  int(max_length/2), aln_suffix, fasta_suffix) 
 
 
     dev_seqs1_encodings = seq_tokenizer(dev_seqs1, is_split_into_words=True, return_offsets_mapping=False, truncation=True, padding=False, max_length = int(max_length/2))
@@ -512,6 +565,9 @@ def load_datasets(train_fastas, train_alns, dev_fastas, dev_alns, train_batchsiz
     outdev['seqnames2'] = dev_seqnames2
     outdev['pos1'] = dev_pos1
     outdev['pos2'] = dev_pos2
+    outdev['aas1'] = dev_aas1
+    outdev['aas2'] = dev_aas2
+
     outdev['label'] = dev_labels
     outdev.to_csv(os.path.join(outdir, "devdata.csv"), index=False)
 

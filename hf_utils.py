@@ -4,6 +4,25 @@ import torch
 
 import faiss
 import numpy as np
+
+
+### AA class
+class AA:
+   def __init__(self):
+       self.seqnum = ""
+       self.seqname = ""
+       self.seqindex = ""
+       self.seqpos = ""
+       self.seqaa = ""
+       self.index = ""
+       self.clustid = ""
+   #__str__ and __repr__ are for pretty #printing
+   def __str__(self):
+        return("{}-{}-{}".format(self.seqnum, self.seqpos, self.seqaa))
+   def __repr__(self):
+    return str(self)
+
+
 ### Sequence formatting
 
 def format_sequence(sequence, add_spaces = True):
