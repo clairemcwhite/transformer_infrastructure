@@ -94,8 +94,8 @@ def get_embed_args():
                         help="Flag: Whether to get sequence embeddings")
     parser.add_argument("-a", "--get_aa_embeddings", dest = "get_aa_embeddings", action = "store_true",
                         help="Flag: Whether to get amino-acid embeddings")
-    parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = bool, default = True,
-                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Potentially not needed for sets of complete sequences or domains that start at the same character, default: True")
+    parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = int, default = 5,
+                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Add n X's to start and end of sequencesPotentially not needed for sets of complete sequences or domains that start at the same character, default: 5")
     parser.add_argument("-t", "--truncate", dest = "truncate", type = int, required = False,
                         help= "Optional: Truncate all sequences to this length")
     parser.add_argument("-ad", "--aa_target_dim", dest = "aa_target_dim", type = int, required = False,
@@ -117,7 +117,7 @@ def get_embed_args():
     
     return(args)
 
-def parse_fasta_for_embed(fasta_path, truncate = None, extra_padding = True):
+def parse_fasta_for_embed(fasta_path, truncate = None, padding = 5):
    ''' 
    Load a fasta of protein sequences and
      add a space between each amino acid in sequence (needed to compute embeddings)
@@ -134,19 +134,23 @@ def parse_fasta_for_embed(fasta_path, truncate = None, extra_padding = True):
    sequences_spaced = []
    ids = []
    for record in SeqIO.parse(fasta_path, "fasta"):
-       
-       seq = record.seq
 
-       if extra_padding == True: 
-           seq = "XXXXX{}XXXXX".format(seq)
+       seq = record.seq
+       sequences.append(seq)
+
        if truncate:
           print("truncating to {}".format(truncate))
           seq = seq[0:truncate]
- 
+
+       if padding > 0: 
+           pad_string = "X" * padding
+           #seq = "XXXXX{}XXXXX".format(seq)
+           seq = "{}{}{}".format(pad_string, seq, pad_string)
+
        seq_spaced =  " ".join(seq)
-       if extra_padding == True:
-          seq = seq[5:]
-          seq = seq[:-5]
+       #if extra_padding == True:
+       #   seq = seq[5:]
+       #   seq = seq[:-5]
 
        # 5 X's seems to be a good amount of neutral padding
        #if extra_padding == True:
@@ -158,7 +162,6 @@ def parse_fasta_for_embed(fasta_path, truncate = None, extra_padding = True):
        #     seq_spaced = seq_spaced + padding_aa
   
        ids.append(record.id)
-       sequences.append(seq)
        sequences_spaced.append(seq_spaced)
    return(ids, sequences, sequences_spaced)
 
@@ -171,6 +174,7 @@ def mean_pooling(model_output, attention_mask):
     #https://www.sbert.net/examples/applications/computing-embeddings/README.html
     '''
     token_embeddings = model_output[0] #First element of model_output contains all token embeddings
+    print("token_embeddings_size", token_embeddings.size())
     input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
     sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
     sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
@@ -227,7 +231,7 @@ def split_hidden_states(hidden_states, head_len = 64, aa_dim = 0 ):
 
     return(hstates_split, head_ids)
 
-def retrieve_aa_embeddings(model_output, layers = None, padding = "", heads = None):
+def retrieve_aa_embeddings(model_output, layers = None, padding = 0, heads = None):
     '''
     Get the amino acid embeddings for each sequences
     Pool layers by concatenating selection of layers
@@ -275,9 +279,9 @@ def retrieve_aa_embeddings(model_output, layers = None, padding = "", heads = No
         #aa_embeddings = torch.cat(tuple([aa_embeddings_split[i] for i in head_indices]), dim = -1)
 
     print("pre", aa_embeddings.shape)
-    if padding:
+    if padding > 0:
         # to remove CLS + XXXXX + XXXXX + SEP
-        trim = 6
+        trim = 1 + padding
     else:
          # to remove CLS + SEP 
          trim = 1
@@ -288,10 +292,13 @@ def retrieve_aa_embeddings(model_output, layers = None, padding = "", heads = No
 
 
 def retrieve_sequence_embeddings(model_output, encoded):
+   
     ''' 
-    Get a sequence embedding by taking the mean of all amino acid embeddings
+    UNUSED
+    Get a sequence embedding by taking the mean of all final layer amino acid embeddings
     Return shape (numseqs x 1024)
     '''
+    print("encoded", encoded['attention_mask'])
     sentence_embeddings = mean_pooling(model_output, encoded['attention_mask'])
     print('sentence_embeddings.shape: {}'.format(sentence_embeddings.shape))
     return(sentence_embeddings)
@@ -434,9 +441,11 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
  
             # Do final processing here. 
             if get_sequence_embeddings == True:
+
+                # Attention mask is all ones, so not helpful
                 sequence_embeddings = mean_pooling(model_output, data['attention_mask'])
                 sequence_embeddings = sequence_embeddings.to('cpu')
-
+ 
                 if sequence_pcamatrix_pkl:
                     sequence_embeddings = apply_pca(sequence_embeddings, seq_pcamatrix, seq_bias)
 
@@ -517,15 +526,15 @@ if __name__ == "__main__":
              exit(1)
     ids, sequences, sequences_spaced = parse_fasta_for_embed(fasta_path = args.fasta_path, 
                                                              truncate = args.truncate, 
-                                                             extra_padding = args.extra_padding)
+                                                             padding = args.extra_padding)
 
     seqlens = [len(x) for x in sequences]
  
-    if args.extra_padding:
-       padding = 5
+    #if args.extra_padding:
+    #   padding = 5
 
-    else: 
-       padding = 0
+    #else: 
+    #   padding = 0
     
     #print(sequences_spaced)
     layers = args.layers
@@ -649,6 +658,9 @@ def embed_sequences(model_path, sequences, extra_padding,  pkl_out):
     # Compute the embeddings using the multi-process pool
     # about 1.5 hours to this step with 4 GPU and 1.4 million sequences 
     print("Computing embeddings")
+    print("Prior max sequence length", model.max_seq_length)
+    model.max_seq_length = 1024
+    print("New max sequence length", model.max_seq_length)
 
     embeddings = model.encode(sequences, output_value = 'token_embeddings')
     #print(e)

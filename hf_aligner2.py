@@ -55,12 +55,16 @@ class AA:
 
 # This is in the goal of finding sequences that poorly match before aligning
 # SEQSIM
-def graph_from_distindex(index, dist):  
+def graph_from_distindex(index, dist, min_edge_weight = 0):  
 
     edges = []
     weights = []
+    complete = []
     for i in range(len(index)):
+       #complete.append(i)
        for j in range(len(index[i])):
+          #if j in complete:
+          #    continue
           # Index should not return negative
           weight = dist[i,j]
           if weight < 0:
@@ -69,7 +73,7 @@ def graph_from_distindex(index, dist):
           edge = (i, index[i, j])
           #if edge not in order_edges:
           # Break up highly connected networks, simplify clustering
-          if weight > 0.7:
+          if weight >= min_edge_weight:
               edges.append(edge)
               weights.append(weight)
 
@@ -287,7 +291,8 @@ def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to
     # If unassigned sequence extends before the sequence
     if not starting_clustid and starting_clustid != 0:
        starting_clustid = -np.inf   
- 
+    print('start, end', starting_clustid, ending_clustid)
+
     # cluster_order must be zero:n
     # Add assertion
     pos_lists = []
@@ -295,13 +300,14 @@ def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to
             pos_list = []
             startfound = False
 
+            #print("aa", x)
             # If no starting clustid, add sequence until hit ending_clustid
             if starting_clustid == -np.inf:
                  startfound = True
                 
             prevclust = "" 
             for pos in x:
-                try: 
+                if pos in pos_to_clustid.keys(): 
                     pos_clust = pos_to_clustid[pos]
                     prevclust = pos_clust
 
@@ -317,7 +323,7 @@ def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to
                     elif pos_clust == starting_clustid:
                          startfound = True
                         #print(pos_clust, starting_clustid, ending_clustid)
-                except Exception as E:
+                else:
                         #print(startfound, "exception", pos, prevclust, starting_clustid, ending_clustid)
                         if startfound == True or prevclust == cluster_order[-1]:
                            if prevclust:
@@ -385,7 +391,7 @@ def get_unassigned_aas(seqs_aas, pos_to_clustid, too_small = []):
 
 
 
-def address_unassigned(gap, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust,  I2, minscore = 0.1, ignore_betweenness = False, betweenness_cutoff = 0.10, minclustsize = 2, apply_walktrap = True):
+def address_unassigned(gap, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust,  I2, minscore = 0.5, ignore_betweenness = False, betweenness_cutoff = 0.30, minclustsize = 2, apply_walktrap = True):
         # This is allowed to disturb prior clusters
         # Get a range of sequences between guidepost (guidepost inclusive?)
         new_clusters = []
@@ -417,6 +423,7 @@ def address_unassigned(gap, seqs_aas, pos_to_clustid, cluster_order, clustid_to_
            if key in target_aas:
                limited_I2[key] = I2[key].copy()#copy.deepcopy(I2[key]) 
         print("limited")
+        print("new_rbh_minscore", minscore)
         #for key, value in tmp_I2.items():
         #     print(key, value) 
         
@@ -440,7 +447,7 @@ def address_unassigned(gap, seqs_aas, pos_to_clustid, cluster_order, clustid_to_
 
        
         # Get reciprocal best hits in a limited range
-        new_hitlist = get_besthits(limited_I2, 0.5)
+        new_hitlist = get_besthits(limited_I2, minscore)
 
         #for x in new_hitlist:
         #   print("new_hitlist", x)
@@ -740,11 +747,11 @@ def squish_clusters2(alignment, index, hidden_states, index_to_aa):
                    if target_aa in c2:
                        if score > 0:
                            intra_clust_hits.append(score )
- 
+                           print(aa1, target_aa, score)
                 #except Exception as E:
                 #   # Not all indices correspond to an aa, yes they do
                 #   continue
-          print(intra_clust_hits)
+          print("intra clust hits", intra_clust_hits)
           print("c1", c1)
           print("c2", c2)
           combo = c1 + c2
@@ -1595,7 +1602,7 @@ def first_clustering(G,  betweenness_cutoff = .10, ignore_betweenness = False, a
         #print("First connected set", sub_G.vs()['name'], apply_walktrap)
         
         # First start with only remove very HB nodes
-        new_G = remove_highbetweenness(sub_G, betweenness_cutoff = 0.1)
+        new_G = remove_highbetweenness(sub_G, betweenness_cutoff = betweenness_cutoff)
         sub_islands = new_G.clusters(mode = "weak")
         for sub_sub_G in sub_islands.subgraphs():
 
@@ -1887,6 +1894,117 @@ def dag_to_cluster_order(cluster_orders, seqs_aas, pos_to_clust_dag, clustid_to_
 
 
 
+def get_seq_groups2(seqs, seq_names, embedding_dict, logging, exclude, do_clustering):
+    numseqs = len(seqs)
+
+    
+    #hstates_list, sentence_embeddings = get_hidden_states(seqs, model, tokenizer, layers, return_sentence = True)
+    #logging.info("Hidden states complete")
+    #print("end hidden states")
+
+    #if padding:
+    #    logging.info("Removing {} characters of neutral padding X".format(padding))
+    #    hstates_list = hstates_list[:,padding:-padding,:]
+
+    padded_seqlen = embedding_dict['aa_embeddings'].shape[1]
+    logging.info("Padded sequence length: {}".format(padded_seqlen))
+
+
+    k_select = numseqs 
+    sentence_array = np.array(embedding_dict['sequence_embeddings']) 
+
+    print("sentnece array shape", sentence_array.shape)
+    if sentence_array.shape[1] > 1024:
+       sentence_array = sentence_array[:,:1024]
+    print(sentence_array.shape)
+
+    #print("sentence_array", sentence_array)
+
+    print(sentence_array.shape)
+    s_index = build_index_flat(sentence_array)
+    print(numseqs, k_select)
+    s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
+
+    #print(s_distance) 
+    #print(s_index2)
+    G = graph_from_distindex(s_index2, s_distance)
+    #print(G)
+    G = G.simplify(combine_edges = "first")  # symmetrical, doesn't matter
+    print(G)
+    #print("not excluding?", exclude)
+    to_exclude = []
+
+   
+    group_hstates_list = []
+    cluster_seqnums_list = []
+    cluster_names_list = []
+    cluster_seqs_list = []
+   
+
+    # TODO use two variable names for spaced and unspaced seqs
+    logging.info("Removing spaces from sequences")
+    #if padding:
+    #    seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
+    #else:
+    #    seqs = [x.replace(" ", "") for x in seqs]
+    #prev_to_exclude = []
+    if do_clustering == True:
+        #print("fastgreedy")
+        #print(G)
+    
+      #repeat = True
+      #
+      #while repeat == True:
+      d = sentence_array.shape[1]
+      for k in range(1, 20):
+         kmeans = faiss.Kmeans(d = d, k = k, niter = 20)
+         kmeans.train(sentence_array)
+    
+   
+         D, I = kmeans.index.search(sentence_array, 1) 
+         print("D", D)
+         print("I", I)
+         clusters = I.squeeze()
+         labels = list(zip(G.vs()['name'], clusters))
+         #for x in labels:
+         #    print("labels", x[0], x[1])
+
+
+         group_hstates_list = []
+         cluster_seqnums_list = []
+         cluster_names_list = []
+         cluster_seqs_list = []
+ 
+         prev_to_exclude = to_exclude
+        
+         means = []
+         for clustid in list(set(clusters)):
+             print("eval clust", clustid)
+             clust_seqs = [x[0] for x in labels if x[1] == clustid] 
+             print("clust_seqs", clust_seqs)
+             #print("labels from loop", labels)
+             #for lab in labels:
+             #     print("labels", lab, lab[0], lab[1], clustid) 
+             #     if lab[1] == clustid:
+             # 
+              #         print("yes")
+             #print("GG", G.vs()['name'])
+             #print("GG", G.es()['weight'])
+             #edgelist = []
+             weightlist = []
+             for edge in G.es():
+                  #print(edge, edge['weight'])
+                  #print(G.vs[edge.target]["name"], G.vs[edge.source]["name"])
+                  if G.vs[edge.target]["name"] in clust_seqs:
+                       if G.vs[edge.source]["name"] in clust_seqs:
+                          weightlist.append(edge['weight'])
+                          print(G.vs[edge.target]["name"], G.vs[edge.source]["name"], edge['weight'])
+             print(weightlist)
+             print("clust {} mean {}".format(clustid, np.mean(weightlist)))
+             means.append(np.mean(weightlist))
+         print("k {} overall mean {}".format(clustid, np.mean(means)))    
+
+      #return(0)
 
 
 def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_clustering):
@@ -1908,7 +2026,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
     k_select = numseqs 
     sentence_array = np.array(embedding_dict['sequence_embeddings']) 
 
-    print(sentence_array.shape)
+    print("sentnece array shape", sentence_array.shape)
     if sentence_array.shape[1] > 1024:
        sentence_array = sentence_array[:,:1024]
     print(sentence_array.shape)
@@ -1969,74 +2087,88 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
         # Rebuild G
         G = igraph.Graph.TupleList(edges=edgelist, directed=False)
         G.es['weight'] = weightlist
-        print(G)
-        
+        print("G", G)
 
-        #seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
-        #print(seq_clusters)
-           # This has about same output as fastgreedy
-            #print("multilevel")
-        #seq_clusters = G.community_multilevel(weights = 'weight')
+
+
+        seq_clusters = G.community_multilevel(weights = 'weight')
+        ## The issue with walktrap is that the seq sim graph is near fully connected
+        print("multilevel", seq_clusters)
         seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
-        print("G", G) 
-        for x in seq_clusters.subgraphs():
-             print("subgraph", x)      
+        print("walktrap", seq_clusters)
+        seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
+        print("fastgreedy", seq_clusters)
+
+        seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
+        #for x in seq_clusters.subgraphs():
+        #     print("subgraph", x)      
         if len(seq_clusters.subgraphs()) == len(G.vs()):
-             #seq_cluster = seq_clusters.vs()['name']
+        #     #seq_cluster = seq_clusters.vs()['name']
              seq_clusters = G.clusters(mode = "weak") # walktrap can cluster nodes individually. See UBQ
-                              # If that happens, use original graph
-             print("is this happening")
+         #                     # If that happens, use original graph
+         #    print("is this happening")
+
+        # Spinglass doesn't work on disconnected graphs
+        # Spinglass wins. See  Eg. Extradiol_dioxy 
+        #G_weak  = G.clusters(mode = "weak")
+        #for sub_G in G_weak.subgraphs():
+        #    sub_seq_clusters = sub_G.community_spinglass(weights = 'weight') 
+        #        
+        #    print("spinglass", sub_seq_clusters)
+        #    for seq_cluster_G in sub_seq_clusters.subgraphs():
+        print("walktrap", seq_clusters)
         for seq_cluster_G in seq_clusters.subgraphs():
-            # Do exclusion within clusters
-            print("seq_clusters", seq_cluster_G)
-            if exclude == True:
-
-                clust_names = seq_cluster_G.vs()["name"]
-                print("clust_names", clust_names)
-                cluster_to_exclude = candidate_to_remove(seq_cluster_G, clust_names, z = -5)
-                print(cluster_to_exclude)
-                   
-                #print('name', to_exclude)
-                to_delete_ids_sub_G = [v.index for v in seq_cluster_G.vs if v['name'] in cluster_to_exclude]
-                #print('vertix_id', to_delete_ids)
-                seq_cluster_G.delete_vertices(to_delete_ids_sub_G) 
-
-                #to_delete_ids_G = [v.index for v in G.vs if v['name'] in cluster_to_exclude]
-                #G.delete_vertices(to_delete_ids_G)
-
-                print("to_exclude_pre", to_exclude)
-                to_exclude = to_exclude + cluster_to_exclude
+        
+                # Do exclusion within clusters
+                print("seq_clusters", seq_cluster_G)
+                if exclude == True:
+    
+                    clust_names = seq_cluster_G.vs()["name"]
+                    print("clust_names", clust_names)
+                    cluster_to_exclude = candidate_to_remove(seq_cluster_G, clust_names, z = -5)
+                    print(cluster_to_exclude)
+                       
+                    #print('name', to_exclude)
+                    to_delete_ids_sub_G = [v.index for v in seq_cluster_G.vs if v['name'] in cluster_to_exclude]
+                    #print('vertix_id', to_delete_ids)
+                    seq_cluster_G.delete_vertices(to_delete_ids_sub_G) 
+    
+                    #to_delete_ids_G = [v.index for v in G.vs if v['name'] in cluster_to_exclude]
+                    #G.delete_vertices(to_delete_ids_G)
+    
+                    print("to_exclude_pre", to_exclude)
+                    to_exclude = to_exclude + cluster_to_exclude
+                    to_exclude = list(set(to_exclude))
+                    print("to_exclude_post", to_exclude)
+                    if to_exclude:       
+                        logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
+                        print("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
+    
+                hstates = []
+                seq_cluster = seq_cluster_G.vs()['name']
+                seq_cluster.sort()
+                print(seq_cluster)
+                cluster_seqnums_list.append(seq_cluster)
+        
+                filter_indices = seq_cluster
+                group_hstates = np.take(embedding_dict['aa_embeddings'], filter_indices, axis = 0)
+                group_hstates_list.append(group_hstates)
+                #Aprint(group_hstates.shape)
+        
+                cluster_names = [seq_names[i] for i in filter_indices]
+                cluster_names_list.append(cluster_names)
+           
+                cluster_seq = [seqs[i] for i in filter_indices]
+                cluster_seqs_list.append(cluster_seq)
                 to_exclude = list(set(to_exclude))
-                print("to_exclude_post", to_exclude)
-                if to_exclude:       
-                    logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-                    print("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-
-            hstates = []
-            seq_cluster = seq_cluster_G.vs()['name']
-            seq_cluster.sort()
-            print(seq_cluster)
-            cluster_seqnums_list.append(seq_cluster)
-    
-            filter_indices = seq_cluster
-            group_hstates = np.take(embedding_dict['aa_embeddings'], filter_indices, axis = 0)
-            group_hstates_list.append(group_hstates)
-            #Aprint(group_hstates.shape)
-    
-            cluster_names = [seq_names[i] for i in filter_indices]
-            cluster_names_list.append(cluster_names)
-       
-            cluster_seq = [seqs[i] for i in filter_indices]
-            cluster_seqs_list.append(cluster_seq)
-            to_exclude = list(set(to_exclude))
         print("eq check", to_exclude, prev_to_exclude)
         if set(to_exclude) == set(prev_to_exclude):
-            repeat = False
+           repeat = False
         else:
-           cluster_seqs_list = [] 
-           cluster_seqnums_list = []
-           group_hstates_list = []
-           cluster_names_list= []
+               cluster_seqs_list = [] 
+               cluster_seqnums_list = []
+               group_hstates_list = []
+               cluster_names_list= []
     else:
          if exclude == True:
             clust_names = G.vs()["name"] 
@@ -2114,11 +2246,10 @@ def dedup_clusters(clusters_list, G, minclustsize):
                   new_clusters_list.append(clust)
     return(new_clusters_list)
 
-def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padding = 5, minscore1 = 0.5, alignment_group = 0, headnorm = False):
+def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, minscore1 = 0.5, alignment_group = 0, headnorm = False):
     """
     Control for running whole alignment process
     seqs should be spaced
-    padding tells amount of padding to remove from seqs
     model = prot_bert_bfd
     """
 
@@ -2151,60 +2282,6 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
         hstates_list = hstates_heads.reshape(numseqs, padded_seqlen, embedding_length)
         print(hstates_list.shape)
 
-#    for head in range(0, hstates_list.shape[2], 64):
-#   
-#      lst = []
-#      print(head, head + 64)
-#      b = np.take(hstates_list, indices= range(head, head + 64), axis = 2)
-#    
-#      print(b.shape)
-#
-##    #print(b)
-#    # For prot
-#      protlist = []
-#      for i in range(len(b)):
-#        # for aa
-#        #for j in range(len(b[i])):
-#        #  # for aa
-#        #  for k in range(len(b[i])):
-#        #      print("vect1", b[i][j])
-#        #      print("vect2", b[i][k])
-#        #      protlist.append(cosine_similarity(b[i][j], b[i][k]))
-#        #norm_b = normalize(b[i], axis =2, norm = "l2")
-#        #norm_b = np.linalg.norm(b[i], axis=1)
-#        #print(norm_b)
-#        #print(b[i].shape)
-#        A = cosine_similarity(b[i], dense_output= False)
-#        B =  A[np.triu_indices(3, k = 1)]
-#        protlist.append(np.mean(B))
-#      print(protlist)
-# #           
-  
-#    #means = np.mean(b, axis = 1)
-#    #print(variances)
-#    #rint(np.var(means, axis = 1))
-#       
-#   #for s in hstates_list:
-#   #     print(s.shape)
-#        
-
-
-
-   # Drop X's from here
-    #print(hstates_list.shape)
-    # Remove first and last X padding
-
-    # After encoding, remove spaces from sequences
-    #for seq in seqs:
-    #   hidden_states = get_hidden_states([seq], model, tokenizer, layers)
-    #   hidden_states_list.append(hidden_states)
-
-
-    # Build index from all amino acids 
-    #d = hidden_states[0].shape[1]
-
-    # Go from (numseqs, seqlen, emb) to (numseqs * seqlen, emb)
-    #return(0)
     logging.info("Flattening hidden states list")
     hidden_states = np.array(reshape_flat(hstates_list))  
     logging.info("embedding_shape: {}".format(hidden_states.shape))
@@ -2307,7 +2384,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
     #print("miniquery_done")
     #return(0)
     # CHANGE BACK
-    D1, I1 =  index.search(hidden_states, k = numseqs*10) 
+    D1, I1 =  index.search(hidden_states, k = numseqs*20) 
     print("SHAPE", hidden_states.shape)
 
 
@@ -2332,7 +2409,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
     minscore1 = 0.5
  
     #return(0)
-    hitlist_all = get_besthits(I2, minscore = minscore1)
+    hitlist_all = get_besthits(I2, minscore = 0.75)
     
     #hitlist_all = get_besthits(D2, I2, seqnums, index_to_aa, padded_seqlen, minscore = minscore1)
     for x in hitlist_all:
@@ -2407,6 +2484,8 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
         if len(clusters_list) == 0:
             clusters_list = first_clustering(G, betweenness_cutoff = 1, ignore_betweenness = True, apply_walktrap = False)
 
+    minclustsize = 4
+
     #print("High betweenness list, hblist: ", hb_list)
 
     # Bring in betweenness?
@@ -2466,12 +2545,12 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
        if len(seqnums) < 5:
             minclustsize = len(seqnums) - 1
        else:
-            minclustsize = 5
+            minclustsize = 4
     else:
        minclustsize = 2
 
     minscore = 0.5
-    betweenness_cutoff = 0.10
+    betweenness_cutoff = 0.30
     history_unassigned = {'onebefore':[], 'twobefore':[], 'threebefore':[]}
     
     too_small = [] 
@@ -2494,13 +2573,17 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, padd
             return(alignment, index, hidden_states, index_to_aa)
 
         if ( unassigned == history_unassigned['threebefore'] or  unassigned == history_unassigned['twobefore'] ) and gapfilling_attempt > 10:
+            if minscore > 0.1:
+                minscore = 0.1
+                print("reducing minscore to {} at gapfilling attempt {}".format(minscore, gapfilling_attempt))
+            else:
+ 
+                print("Align by placing remaining amino acids")
+                cluster_order, clustid_to_clust, pos_to_clustid, alignment = fill_in_hopeless2(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, index, hidden_states)
+                unassigned = get_unassigned_aas(seqs_aas, pos_to_clustid)
+                alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
 
-            print("Align by placing remaining amino acids")
-            cluster_order, clustid_to_clust, pos_to_clustid, alignment = fill_in_hopeless2(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, index, hidden_states)
-            unassigned = get_unassigned_aas(seqs_aas, pos_to_clustid)
-            alignment = make_alignment(cluster_order, seqnums, clustid_to_clust)
-
-            return(alignment,   index, hidden_states, index_to_aa)
+                return(alignment,   index, hidden_states, index_to_aa)
  
         history_unassigned['threebefore'] = history_unassigned['twobefore']
         history_unassigned['twobefore'] = history_unassigned['onebefore']
@@ -2723,6 +2806,8 @@ def removeSublist(lst):
     return result
       
 
+
+
 def fill_in_unassigned_w_search(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, index, hidden_states,  index_to_aa, minclustsize = 1, remove_both = True):
 
     '''
@@ -2820,13 +2905,211 @@ def organize_clusters(clusterlist, seqs_aas, minclustsize = 1):
     #alignment = make_alignment(cluster_order_merge, seqnums, clustid_to_clust_merge)
     ##print(alignment_print(alignment, seq_names)[0])
 
+def get_targets(gap, seqs_aas, cluster_order, pos_to_clustid):
+        
+        starting_clustid = gap[0]
+        ending_clustid = gap[2] 
+        gap_seqaas = gap[1]
+        #gap_seqnum = list(set([x.seqnum for x in gap_seqaas]))[0]
+        target_aas_list = get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to_clustid)
+        #if "3-2-Y" in gap_seqaas:
+        #      print("HERE")
 
+        edgelist = []
+        target_aas = list(flatten(target_aas_list))
+        for query in gap_seqaas:
+              for target in target_aas:
+                  edgelist.append([query, target])
 
+        return(edgelist)
+        #target_aas = list(set(target_aas + gap_seqaas))
+
+def address_unassigned_aas(scope_aas, neighbors, I2, minscore = 0.5, ignore_betweenness = False,  betweenness_cutoff = 0.3, minsclustsize = 2, apply_walktrap = True):
+
+        limited_I2 = {}
+        # Suspect that this is slow
+        for key in I2.keys():
+           if key in scope_aas:
+               limited_I2[key] = I2[key].copy() 
+        print("limited")
+        print("new_rbh_minscore", minscore)
+        for query_aa in limited_I2.keys():             
+             # These keys 
+             for seq in limited_I2[query_aa].keys():
+                   
+                   limited_I2[query_aa][seq] = [x for x in limited_I2[query_aa][seq] if x[0] in scope_aas]
+                   #limited_I2[query_aa][seq] = [x for x in limited_I2[query_aa][seq] if x[0] in neighbors[query_aa]]
+        print(limited_I2)
+        # Get reciprocal best hits in a limited range
+        new_hitlist = get_besthits(limited_I2, minscore)
  
-def fill_in_unassigned_w_clustering(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, I2,  minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.15, apply_walktrap = True ):        
+        new_rbh = get_rbhs(new_hitlist)
+
+        for x in new_rbh:
+             print("new_rbh", x)
+        G = graph_from_rbh(new_rbh) 
+        new_clusters  = first_clustering(G, betweenness_cutoff = betweenness_cutoff,  ignore_betweenness = ignore_betweenness, apply_walktrap = apply_walktrap ) 
+     
+        for x in new_clusters:
+            print("new_clusters", x)
+ 
+        #new_clusters = removeSublist(new_clusters)
+        clustered_aas = list(flatten(new_clusters))
+
+        return(new_clusters, new_rbh)
+
+
+       
+
+
+
+def fill_in_unassigned_w_clustering(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, I2,  minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.3, apply_walktrap = True ):        
     '''
     Run the same original clustering, ??? allows overwritting of previous clusters
     
+    So there's a situation where the gap range contains a different amino acid that itself has a different gap range, with a much higher score. 
+    Maybe do larger first?
+    No, do network to find ranges for allxall search. 
+    If a new member of an rbh cluster has a large unassigned range, check if has higher rbh t o sequence?
+    '''
+    clusters_filt = list(clustid_to_clust.values())
+    print("TESTING OUT CLUSTERS_FILT")
+    for x in clusters_filt:
+        print("preassignment clusters_filt", x)
+    # extra arguments?
+    edgelist = []
+    for gap in unassigned:
+        gap_edgelist = get_targets(gap, seqs_aas, cluster_order, pos_to_clustid)
+        edgelist = edgelist + gap_edgelist
+
+    edgelist_G = igraph.Graph.TupleList(edges=edgelist, directed=False)
+    edgelist_G = edgelist_G.simplify() # Remove duplicate edges
+    islands = edgelist_G.clusters(mode = "weak") 
+
+    new_clusters_from_rbh = []
+    for sub_G in islands.subgraphs():
+       print("new edgelist subgraph", sub_G)
+       print(sub_G.vs()['name'])
+       neighbors = {}
+       for vertex in sub_G.vs():
+           #print(vertex)
+           vertex_neighbors = sub_G.neighbors(vertex)
+           #print(vertex_neighbors)
+           neighbors[vertex['name']] = sub_G.vs[vertex_neighbors]["name"]
+       print("neighbors", neighbors)
+
+
+       newer_clusters, newer_rbh = address_unassigned_aas(sub_G.vs()['name'], neighbors, I2, minscore = 0.5, ignore_betweenness = False,  betweenness_cutoff = 0.3, minsclustsize = 2, apply_walktrap = True)
+       new_clusters_from_rbh  = new_clusters_from_rbh + newer_clusters
+
+       #newer_rbhs = newer_rbhs + newer_rbh
+
+    #unique_rbhs = [list(x) for x in set(tuple(x) for x in newer_rbhs)]
+
+    #iG2 = graph_from_rbh(unique_rbhs)
+    #new_clusters_list = dedup_clusters(new_clusters, G2, minclustsize)
+
+    # Going to do an additional step
+    # If a cluster has doubles
+    # See if there is overlap with another cluster
+    # See if removing the overlap amino acids resolves the doubles
+    #
+    new_clusters = []
+    too_small = []
+
+    for clust in new_clusters_from_rbh:
+          if len(clust) >= minclustsize:
+                new_clusters.append(clust)
+          else:
+             # This is never happening?
+             if len(clust) > 1:
+                too_small.append(clust)
+
+    for x in new_clusters:
+        print("All new clusters", x)
+    print("or here")
+    #print("New clusters:", new_clusters)
+    # Very important to removeSublist here
+    # Is it anymore?
+    new_clusters = removeSublist(new_clusters)
+    # Need to remove overlaps from clusters
+    # Get amino acids in more than one cluster, remove them. 
+
+    #print("New clusters after sublist removal",  new_clusters) 
+    aa_counter = {}
+    new_clusters_flat  = flatten(new_clusters) 
+    #print("flat_clusters", new_clusters_flat)
+    aa_counts = Counter(new_clusters_flat)
+    dupped_aas = {key for key, val in aa_counts.items() if val != 1}
+    print("dupped aas", dupped_aas)
+
+    # From doubled aas from clusters list of lists
+    new_clusters = [[aa for aa in clust if aa not in dupped_aas] for clust in new_clusters]
+        
+
+    # If this makes clusters too small remove them
+ 
+    new_clusters = [clust for clust in new_clusters if len(clust) >= minclustsize]
+
+    print("WHAT is minclustsize", minclustsize)
+    for x in new_clusters:
+        print("All new new clusters", x)
+
+    #print("New clusters after overlap removal",  new_clusters) 
+    # Due to additional walktrap, there's always a change that a new cluster won't be entirely consistent with previous clusters. 
+    # In this section, remove any members of a new cluster that would bridge between previous clusters and cause over collapse
+    #print(pos_to_clustid)
+    new_clusters_filt = []
+    for clust in new_clusters:
+         clustids = []
+         posids = []
+         new_additions = []
+         for pos in clust:      
+            #print(pos)
+            if pos in pos_to_clustid.keys():
+               clustid = pos_to_clustid[pos]
+               clustids.append(clustid)
+               posids.append(pos)
+               print(pos, clustid)
+            else:
+                # Position wasn't previously clustered
+                print("new_additions", clust,pos)
+                new_additions.append(pos)
+         #print("posids", posids)                  
+         if len(list(set(clustids))) > 1:
+            #print("new cluster contains component of multiple previous clusters. Keeping largest matched cluster")
+            clustcounts = Counter(clustids)
+            largest_clust = max(clustcounts, key=clustcounts.get)   
+            sel_pos = [posids[x] for x in range(len(posids)) if clustids[x] == largest_clust]
+            #print("Split cluster catch", clustcounts, largest_clust, posids, clustids, sel_pos)
+            new_clust = sel_pos + new_additions
+                
+         else:
+            new_clusters_filt.append(clust)             
+
+    # T0o much merging happening
+    # See s4-0-I, s4-1-L in cluster 19 of 0-60 ribo
+
+    new_clusters_filt = removeSublist(new_clusters_filt)
+
+    clusters_new = remove_overlap_with_old_clusters(new_clusters_filt, clusters_filt)
+    clusters_merged = clusters_new + clusters_filt
+
+    for x in clusters_merged:
+       print("clusters_merged", x)
+    cluster_order, clustid_to_clust, pos_to_clustid, alignment = organize_clusters(clusters_merged, seqs_aas, minclustsize)
+    return(cluster_order, clustid_to_clust, pos_to_clustid, alignment, too_small)
+
+
+ 
+def fill_in_unassigned_w_clustering_old(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, I2,  minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.3, apply_walktrap = True ):        
+    '''
+    Run the same original clustering, ??? allows overwritting of previous clusters
+    
+    So there's a situation where the gap range contains a different amino acid that itself has a different gap range, with a much higher score. 
+    Maybe do larger first?
+    No, do network to find ranges for allxall search. 
+    If a new member of an rbh cluster has a large unassigned range, check if has higher rbh t o sequence?
     '''
     clusters_filt = list(clustid_to_clust.values())
     print("TESTING OUT CLUSTERS_FILT")
@@ -2975,14 +3258,7 @@ def fill_in_hopeless2(unassigned,  seqs_aas, cluster_order, clustid_to_clust, po
     cluster_order, clustid_to_clust, pos_to_clustid, alignment = organize_clusters(clusters_filt, seqs_aas, minclustsize = 1)
     return(cluster_order, clustid_to_clust, pos_to_clustid, alignment)
 
-# Make parameter actually control this
-def format_sequences(fasta, extra_padding = True):
    
-    # What are the arguments to this? what is test.fasta? 
-    seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta, extra_padding = extra_padding)
-    
-    return(seq_names, seqs, seqs_spaced)
-
 
 
 def get_align_args():
@@ -3154,7 +3430,7 @@ if __name__ == '__main__':
     logging.info("Check for torch")
     logging.info(torch.cuda.is_available())
 
-    padding = True 
+    padding = 50 
     minscore1 = 0.5
 
     logging.info("model: {}".format(model_name))
@@ -3162,8 +3438,9 @@ if __name__ == '__main__':
     logging.info("padding: {}".format(padding))
     logging.info("first score thresholds: {}".format(minscore1))
    
+    seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding)
+    
 
-    seq_names, seqs, seqs_spaced= format_sequences(fasta_path, extra_padding = padding)
  
     print("SEQS!", seqs)    
     if embedding_path:
@@ -3184,7 +3461,7 @@ if __name__ == '__main__':
     # Padding irrelevant at this point 
     cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, cluster_hstates_list, to_exclude = get_seq_groups(seqs ,seq_names, embedding_dict, logging, exclude, do_clustering)
 
-
+    #cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, cluster_hstates_list, to_exclude = get_seq_groups2(seqs ,seq_names, embedding_dict, logging, exclude, do_clustering)
     aln_fasta_list = []
     excluded_records = []
     for excluded_seqnum in to_exclude:
@@ -3226,7 +3503,7 @@ if __name__ == '__main__':
 
 
         else:
-            alignment, index, hidden_states, index_to_aa = get_similarity_network(group_seqs, group_names, group_seqnums, group_embeddings, logging, padding = padding, minscore1 = minscore1, alignment_group = i, headnorm = headnorm)
+            alignment, index, hidden_states, index_to_aa = get_similarity_network(group_seqs, group_names, group_seqnums, group_embeddings, logging,  minscore1 = minscore1, alignment_group = i, headnorm = headnorm)
             alignments.append(alignment)
             index_to_aas_list.append(index_to_aa)
             hidden_states_list.append(hidden_states)
@@ -3658,164 +3935,6 @@ def consolidate_w_clustering(clusters_dict, seqs_aas_dict):
 #    for clustnum, clust in clustid_to_clust.items():
 #        doubled_seqnums = doubles_in_clust(clust)
 #        if doubled_seqnums:
-#             clust_minus_dub_seqs = [x for x in clust if x.seqnum not in doubled_seqnums] 
-#             #print("sequence {} in {}, {} is doubled".format(doubled_seqnums, clustnum, clust))
-#             for seqnum in doubled_seqnums:
-#                 keeper = None
-#                 bestscore = 0
-#                 double_aas = [x for x in clust if x.seqnum == seqnum]     
-#                 #print(double_aas)
-#                 for aa in double_aas:
-#                     candidates_w_score = get_set_of_scores(aa, index, hidden_states, index_to_aa)
-#                     incluster_scores = [x for x in candidates_w_score if x[0] in clust_minus_dub_seqs ]
-#                     total_incluster_score = sum([x[1] for x in incluster_scores])
-#                     #print(total_incluster_score)
-#                     #print(incluster_scores)
-#                     if total_incluster_score > bestscore:
-#                         keeper = aa
-#                         bestscore = total_incluster_score
-#                 #print("Adding back {} to {}".format(keeper, clust_minus_dub_seqs))
-#                 if keeper:
-#                     clust_minus_dub_seqs = clust_minus_dub_seqs + [keeper]
-#                 
-#
-#             clustid_to_clust[clustnum] = clust_minus_dub_seqs
-#
-#
-#    return(clustid_to_clust)
-#
-#
-#def squish_clusters_longrange2(alignment):
-#
-#    cluster_order, clustid_to_clust = clusts_from_alignment(alignment)
-#    clustid_to_clust = {} # build up
-#    merged = []
-#    # Don't do it this way? what is sequence has not assigned amino acids? Will have been placed at this point though
-#    all_seqnums = list(set([x.seqnum for x in list(flatten(alignment)) if not x == "-"]))
-#    #print("All seqnums", all_seqnums)
-#    #print(cluster_order)
-#    cluster_order2 = []
-#    for i in cluster_order:
-#       if i in merged:
-#           continue
-#
-#       clust = [x[i] for x in alignment]
-#       clust_aas_i = [x for x in clust if not x == "-"]
-#       clust_seqnums_i = [x.seqnum for x in clust_aas_i]
-#       clust_gaps_i = [x for x in all_seqnums if x not in clust_seqnums_i]
-#       #print("order {}, cluster {}".format(i, clust_aas_i)) 
-#
-#
-#       if "-" in clust:
-#           #print("clust {}: {} has gaps".format(i, clust))
-#           avail_gaps = {}
-#           dist_blocks = {}
-#           bound_found = {}
-#           for seq in clust_seqnums_i:
-#                 avail_gaps[seq] = 0
-#                 dist_blocks[seq] = 1
-#                 bound_found[seq] = False
-#
-#           max_clustid = len(cluster_order)
-#           present_gaps = len(clust_gaps_i)
-#           all_block_aas = []
-#
-#           # scan forward counting stretches and gaps
-#           all_block_aas = []
-#           for j in range(i + 1, len(cluster_order)):
-#                  
-#                  if not False in bound_found.values():
-#                      #print("All boundaries found")
-#                      break
-#
-#                   
-#                  clust_aas_j = [x[j] for x in alignment if not x[j] == "-"] 
-#                  #print("clust_aas_i", clust_aas_i)
-#                  #print("clust_aas_j", clust_aas_j)
-#                  clust_seqnums_j = [x.seqnum for x in clust_aas_j]
-#                  clust_gaps_j = [x for x in all_seqnums if x not in clust_seqnums_j]
-#                  # Could do squish at this point by testing if clust_gaps_i == clust_seqnums_j
-#                  for seq in clust_seqnums_i:
-#                        
-#                        if seq in clust_seqnums_j:
-#                           if not bound_found[seq]:
-#                               dist_blocks[seq] = dist_blocks[seq] + 1 
-#                               all_block_aas = all_block_aas  + [x for x in clust_aas_j if x.seqnum == seq]
-#                        if seq in clust_gaps_j:
-#                               avail_gaps[seq] = avail_gaps[seq] + 1     
-#                               present_gaps = present_gaps + 1
-#                               bound_found[seq] = True
-#                        #print(dist_blocks, avail_gaps, bound_found)
-#                   
-#           #print(clust_aas_i, dist_blocks, avail_gaps, present_gaps)
-#           if not 0 in avail_gaps.values():
-#             #print("There are currently {} gaps".format(present_gaps))
-#             #print("avail_gaps = {}".format(avail_gaps))
-#             #print("We can attempt a merge at distance {}".format(min(avail_gaps.values())))     
-#             shift_dist = min(avail_gaps.values())
-#             block_range = max(dist_blocks.values())
-#             #print("block range: {}".format(block_range))
-#             #if block_range > 5: # FOR TESTING
-#             #   continue
-#             potential_new_clusts = [] 
-#             new_gap_count = 0
-# 
-#             tot_displaced = 0
-#             current_clust = clust_aas_i 
-#           
-#             current_gaps = len(alignment) - len(current_clust)
-#             for b in range(0, block_range):
-#                if (i + b + shift_dist) >= len(cluster_order):
-#                     #print("Is this happening?")
-#                     break
-#                target_clust = [x[i + b + shift_dist] for x in alignment if not x[i + b + shift_dist] == "-"]
-#                current_gaps = current_gaps + len(alignment) - len(target_clust)
-#                #if b == block_range:
-#                #    current_gaps = current_gaps + numseq - len(target_clust)
-#
-#                displaced = [x for x in target_clust if x in all_block_aas]
-#                #print("{} would be displaced from cluster {}".format(displaced, target_clust))
-#                
-#                target_minus_displaced = [x for x in target_clust if x not in all_block_aas]
-#                potential_new_clust = current_clust + target_minus_displaced
-#                current_clust = displaced
-#                num_displaced = len(displaced)
-#                tot_displaced = tot_displaced + num_displaced
-#                potential_new_clusts.append(potential_new_clust)
-#                new_gap_count = new_gap_count + len(alignment) - len(potential_new_clust)
-#             #print("Gap found in cluster {}".format(cluster_order[i]))              
-#             #print("Current gaps: {}, displaced: {}, new gaps: {}".format(current_gaps, tot_displaced, new_gap_count))
-#             # Not very scientific
-#             #if tot_displaced < current_gaps and tot_displaced < 10 and new_gap_count < 5 or tot_displaced == 0 and new_gap_count * tot_displaced < current_gaps: 
-#             #if tot_displaced < len(all_seqnums) and new_gap;;_count < len(all_seqnums) and 
-#             if (new_gap_count + 1)* tot_displaced < current_gaps:
-#                      print("from original gap cluster {}".format(cluster_order[i]))
-#                      print("merging forward with shift dist {}".format(shift_dist))
-#                      
-#                      merged.append(i)
-#                      #cluster_order2.append(i)
-#
-#                      for z1 in range(0, block_range):
-#                            cluster_order2.append(i + z1 + shift_dist)
-#                            merged.append(i + z1 + shift_dist)
-#                            
-#                            clustid_to_clust[i + z1 + shift_dist] = potential_new_clusts[z1]
-#
-#             else:
-#                #print("Not good merge {}, {}".format(i, clust_aas_i)) 
-#                clustid_to_clust[i] = clust_aas_i
-#                cluster_order2.append(i)   
-#           else:       
-#              #print("No available space {}, {}".format(i, clust_aas_i)) 
-#              clustid_to_clust[i] = clust_aas_i
-#              cluster_order2.append(i)   
-#       else:      
-#         #print("No gaps normal {}, {}".format(i, clust_aas_i)) 
-#         clustid_to_clust[i] = clust_aas_i
-#         cluster_order2.append(i)   
-#
-#          
-#    #print(cluster_order2)
 #    #print(clustid_to_clust) 
 #
 #    return(cluster_order2, clustid_to_clust)
