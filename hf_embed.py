@@ -94,7 +94,7 @@ def get_embed_args():
                         help="Flag: Whether to get sequence embeddings")
     parser.add_argument("-a", "--get_aa_embeddings", dest = "get_aa_embeddings", action = "store_true",
                         help="Flag: Whether to get amino-acid embeddings")
-    parser.add_argument("-p", "--extra_padding", dest = "extra_padding", type = int, default = 5,
+    parser.add_argument("-p", "--extra_padding", dest = "padding", type = int, default = 5,
                         help="Add if using unaligned sequence fragments (to reduce first and last character effects). Add n X's to start and end of sequencesPotentially not needed for sets of complete sequences or domains that start at the same character, default: 5")
     parser.add_argument("-t", "--truncate", dest = "truncate", type = int, required = False,
                         help= "Optional: Truncate all sequences to this length")
@@ -258,15 +258,15 @@ def retrieve_aa_embeddings(model_output, layers = None, padding = 0, heads = Non
     if layers is not None:
         aa_embeddings = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
         #print(aa_embeddings)
-        print(aa_embeddings.shape)
+        #print(aa_embeddings.shape)
 
 
     if heads is not None: 
-        print("selecting heads", heads)
+        #print("selecting heads", heads)
         head_indices = headnames_to_index(heads, heads_per_layer = 16)
         #print(len(hidden_states))
         aa_embeddings = torch.cat(tuple([hidden_states[i] for i in list(range(-31, 0))]), dim = -1)
-        print("full concatenation", aa_embeddings.shape)
+        #print("full concatenation", aa_embeddings.shape)
          
         # Tensor must be copied to host cpu
         aa_embeddings_split, head_ids = split_hidden_states(np.array(aa_embeddings.cpu()), head_len = 64, aa_dim = 1)
@@ -278,7 +278,7 @@ def retrieve_aa_embeddings(model_output, layers = None, padding = 0, heads = Non
         aa_embeddings = torch.from_numpy(aa_embeddings)
         #aa_embeddings = torch.cat(tuple([aa_embeddings_split[i] for i in head_indices]), dim = -1)
 
-    print("pre", aa_embeddings.shape)
+    #print("pre", aa_embeddings.shape)
     if padding > 0:
         # to remove CLS + XXXXX + XXXXX + SEP
         trim = 1 + padding
@@ -286,7 +286,7 @@ def retrieve_aa_embeddings(model_output, layers = None, padding = 0, heads = Non
          # to remove CLS + SEP 
          trim = 1
     aa_embeddings = aa_embeddings[:,trim:-trim,:]
-    print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
+    #print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
 
     return(aa_embeddings, aa_embeddings.shape)
 
@@ -375,8 +375,8 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
 
     model, tokenizer = load_model(model_path)
     print("Model loaded")
-    print("seqs", seqs)
-    print(seqlens)
+   # print("seqs", seqs)
+   # print(seqlens)
     aa_shapes = [] 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device", device) 
@@ -427,22 +427,26 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
     print('maxlen', maxlen)
     #if padding:
     #   maxlen = maxlen + 10
-    
+    get_sequence_embeddings_final_layer_only = False    
     numseqs = len(seqs)
     with torch.no_grad():
 
         # For each chunk of data
         for data in data_loader:
-            print(count * batch_size, numseqs)
+            #print(count * batch_size, numseqs)
             input = data.to(device)
             # DataParallel model splits data to the different devices and gathers back
             # nvidia-smi shows 4 active devices (when there are 4 GPUs)
             model_output = model(**input)
  
             # Do final processing here. 
-            if get_sequence_embeddings == True:
+            if get_sequence_embeddings_final_layer_only == True:
+
+                
+
 
                 # Attention mask is all ones, so not helpful
+                # Old way 
                 sequence_embeddings = mean_pooling(model_output, data['attention_mask'])
                 sequence_embeddings = sequence_embeddings.to('cpu')
  
@@ -450,14 +454,24 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                     sequence_embeddings = apply_pca(sequence_embeddings, seq_pcamatrix, seq_bias)
 
                 sequence_array_list.append(sequence_embeddings)
- 
-            if get_aa_embeddings == True:
+
+            else: #  get_aa_embeddings == True:
                 aa_embeddings, aa_shape = retrieve_aa_embeddings(model_output, layers = layers, heads = heads, padding = padding)
                 aa_embeddings = aa_embeddings.to('cpu')
                 aa_embeddings = np.array(aa_embeddings)
+                
+                if get_sequence_embeddings == True:
+                     # Get sentence embeddings by averaging aa embeddings
+                     sequence_embeddings = np.mean(aa_embeddings, axis = 1)
+                     if sequence_pcamatrix_pkl:
+                        sequence_embeddings = apply_pca(sequence_embeddings, seq_pcamatrix, seq_bias)
+   
+
+                     sequence_array_list.append(sequence_embeddings)
+
                 if aa_pcamatrix_pkl:
                     aa_embeddings = np.apply_along_axis(apply_pca, 2, aa_embeddings, aa_pcamatrix, aa_bias)
-                    print("Post PCA aa_embeddings.shape", aa_embeddings.shape)
+                    #print("Post PCA aa_embeddings.shape", aa_embeddings.shape)
                 # Trim each down to just its sequence length
                 if ragged_arrays == True:
                     aa_embed_ak_intermediate_list = []
@@ -470,21 +484,22 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                          aa_embed_ak = ak.Array(aa_embed_trunc)
                          aa_embed_ak_intermediate_list.append(aa_embed_ak)   
 
-
+ 
                     aa_array_list.append(np.concatenate(aa_embed_ak_intermediate))
                
                 else:
-                    # If not using ragged arrays, must pad to same dim as longest sequence
-                    # print(maxlen - (aa_embeddings.shape[1] - 1))
-                    #if padding:
-                    dim2 = maxlen - (aa_embeddings.shape[1])
-                    #else:
-                         #dim2 = maxlen 
-                    npad = ((0,0), (0, dim2), (0,0))
-                    print(npad)
-                    print(maxlen, aa_embeddings.shape[1])
-                    aa_embeddings = np.pad(aa_embeddings, npad)
-                    aa_array_list.append(aa_embeddings)
+                    if get_aa_embeddings == True:
+                        # If not using ragged arrays, must pad to same dim as longest sequence
+                        # print(maxlen - (aa_embeddings.shape[1] - 1))
+                         #if padding:
+                        dim2 = maxlen - (aa_embeddings.shape[1])
+                        #else:
+                             #dim2 = maxlen 
+                        npad = ((0,0), (0, dim2), (0,0))
+                        #print(npad)
+                        #print(maxlen, aa_embeddings.shape[1])
+                        aa_embeddings = np.pad(aa_embeddings, npad)
+                        aa_array_list.append(aa_embeddings)
 
             count = count + 1
 
@@ -507,7 +522,7 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
 
             embedding_dict['aa_embeddings'] = np.concatenate(aa_array_list)
 
-
+        print("Returning all embeddings")
 
         return(embedding_dict)
 
@@ -526,7 +541,7 @@ if __name__ == "__main__":
              exit(1)
     ids, sequences, sequences_spaced = parse_fasta_for_embed(fasta_path = args.fasta_path, 
                                                              truncate = args.truncate, 
-                                                             padding = args.extra_padding)
+                                                             padding = args.padding)
 
     seqlens = [len(x) for x in sequences]
  
@@ -539,7 +554,7 @@ if __name__ == "__main__":
     #print(sequences_spaced)
     layers = args.layers
     heads = args.heads
-
+    padding = args.padding
     if heads is not None:
        with open(heads, "r") as f:
          headnames = f.readlines()
