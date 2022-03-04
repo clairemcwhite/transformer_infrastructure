@@ -136,12 +136,12 @@ def parse_fasta_for_embed(fasta_path, truncate = None, padding = 5):
    for record in SeqIO.parse(fasta_path, "fasta"):
 
        seq = record.seq
-       sequences.append(seq)
 
        if truncate:
           print("truncating to {}".format(truncate))
           seq = seq[0:truncate]
 
+       sequences.append(seq)
        if padding > 0: 
            pad_string = "X" * padding
            #seq = "XXXXX{}XXXXX".format(seq)
@@ -375,8 +375,8 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
 
     model, tokenizer = load_model(model_path)
     print("Model loaded")
-   # print("seqs", seqs)
-   # print(seqlens)
+    print("seqs", seqs)
+    print(seqlens)
     aa_shapes = [] 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device", device) 
@@ -392,11 +392,11 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
        model = model.to(device)
 
     # Definitly needs to be batched, otherwise GPU memory errors
-    #if torch.cuda.device_count():
-    #   batch_size = torch.cuda.device_count()
-    #else:
-    #   batch_size = 1
-    batch_size = 1
+    if torch.cuda.device_count():
+       batch_size = torch.cuda.device_count()
+    else:
+       batch_size = 1
+    #batch_size = 1
     collate = Collate(tokenizer=tokenizer)
 
     data_loader = DataLoader(dataset=ListDataset(seqs),
@@ -543,8 +543,10 @@ if __name__ == "__main__":
                                                              truncate = args.truncate, 
                                                              padding = args.padding)
 
+    print("First sequences")
+    print(sequences)
     seqlens = [len(x) for x in sequences]
- 
+    
     #if args.extra_padding:
     #   padding = 5
 

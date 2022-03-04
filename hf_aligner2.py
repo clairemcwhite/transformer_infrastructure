@@ -80,10 +80,10 @@ def graph_from_distindex(index, dist, seqnames, seqsim_thresh = 0):
               edges.append(edge)
               weights.append(weight)
 
-    #with open("seqsim.txt", "w") as outfile:
-    #    for i in range(len(edges)):
-    #      print("seqsim ", edges[i], weights[i])
-    #      outfile.write("{},{},{}".format(seqnames[edges[i]], seqnames[edges[i]], weights[i])      
+    with open("seqsim.txt", "w") as outfile:
+        for i in range(len(edges)):
+          print("seqsim ", edges[i], weights[i])
+          outfile.write("{},{},{}".format(seqnames[edges[i]], seqnames[edges[i]], weights[i]))      
  
     G = igraph.Graph.TupleList(edges=edges, directed=False)
     G.es['weight'] = weights
@@ -2087,15 +2087,15 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
         G.es['weight'] = weightlist
         print("G", G)
 
+        #G = G.simplify()
 
-
-        seq_clusters = G.community_multilevel(weights = 'weight')
+        #seq_clusters = G.community_multilevel(weights = 'weight')
         ## The issue with walktrap is that the seq sim graph is near fully connected
-        print("multilevel", seq_clusters)
-        seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
-        print("walktrap", seq_clusters)
-        seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
-        print("fastgreedy", seq_clusters)
+        #print("multilevel", seq_clusters)
+        #seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
+        #print("walktrap", seq_clusters)
+        #seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
+        #print("fastgreedy", seq_clusters)
 
         seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
         #for x in seq_clusters.subgraphs():
