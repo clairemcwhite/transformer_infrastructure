@@ -375,8 +375,8 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
 
     model, tokenizer = load_model(model_path)
     print("Model loaded")
-    print("seqs", seqs)
-    print(seqlens)
+    #print("seqs", seqs)
+    #print(seqlens)
     aa_shapes = [] 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device", device) 
@@ -544,7 +544,7 @@ if __name__ == "__main__":
                                                              padding = args.padding)
 
     print("First sequences")
-    print(sequences)
+    #print(sequences)
     seqlens = [len(x) for x in sequences]
     
     #if args.extra_padding:
