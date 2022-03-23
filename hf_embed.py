@@ -258,7 +258,7 @@ def retrieve_aa_embeddings(model_output, layers = None, padding = 0, heads = Non
     if layers is not None:
         aa_embeddings = torch.cat(tuple([hidden_states[i] for i in layers]), dim=-1)
         #print(aa_embeddings)
-        #print(aa_embeddings.shape)
+        print(aa_embeddings.shape)
 
 
     if heads is not None: 

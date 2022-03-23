@@ -268,169 +268,6 @@ def get_seqsims(seqs, embedding_dict, seqsim_thresh = 0.75, k = None, s_index = 
     print("Index converted to edges in {} seconds".format(end_time - start_time))
     return(G)
 
-def cluster_seqsims(edges, weights):
-
-    # Convert to graph object
-    
-    to_exclude = []
-
-   
-    group_hstates_list = []
-    cluster_seqnums_list = []
-    cluster_names_list = []
-    cluster_seqs_list = []
-   
-
-    # TODO use two variable names for spaced and unspaced seqs
-    logging.info("Removing spaces from sequences")
-    #if padding:
-    #    seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
-    #else:
-    #    seqs = [x.replace(" ", "") for x in seqs]
-    #prev_to_exclude = []
-    if do_clustering == True:
-        #print("fastgreedy")
-        #print(G)
-    
-      repeat = True
-      while repeat == True:
-
-        group_hstates_list = []
-        cluster_seqnums_list = []
-        cluster_names_list = []
-        cluster_seqs_list = []
- 
-        prev_to_exclude = to_exclude
-        
-
-    
-        print("GG", G.vs()['name'])
-        print("GG", G.es()['weight'])
-        edgelist = []
-        weightlist = []
-        for edge in G.es():
-             print(edge, edge['weight'])
-             if G.vs[edge.target]["name"] not in to_exclude:
-                  if G.vs[edge.source]["name"] not in to_exclude:
-                     edgelist.append([ G.vs[edge.source]["name"], G.vs[edge.target]["name"]])
-                     weightlist.append(edge['weight'])
-        # Rebuild G
-        G = igraph.Graph.TupleList(edges=edgelist, directed=False)
-        G.es['weight'] = weightlist
-        print("G", G)
-
-
-
-        seq_clusters = G.community_multilevel(weights = 'weight')
-        ## The issue with walktrap is that the seq sim graph is near fully connected
-        print("multilevel", seq_clusters)
-        seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
-        print("walktrap", seq_clusters)
-        seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
-        print("fastgreedy", seq_clusters)
-
-        seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
-        #for x in seq_clusters.subgraphs():
-        #     print("subgraph", x)      
-        if len(seq_clusters.subgraphs()) == len(G.vs()):
-        #     #seq_cluster = seq_clusters.vs()['name']
-             seq_clusters = G.clusters(mode = "weak") # walktrap can cluster nodes individually. See UBQ
-         #                     # If that happens, use original graph
-         #    print("is this happening")
-
-        # Spinglass doesn't work on disconnected graphs
-        # Spinglass wins. See  Eg. Extradiol_dioxy 
-        #G_weak  = G.clusters(mode = "weak")
-        #for sub_G in G_weak.subgraphs():
-        #    sub_seq_clusters = sub_G.community_spinglass(weights = 'weight') 
-        #        
-        #    print("spinglass", sub_seq_clusters)
-        #    for seq_cluster_G in sub_seq_clusters.subgraphs():
-        print("walktrap", seq_clusters)
-        for seq_cluster_G in seq_clusters.subgraphs():
-        
-                # Do exclusion within clusters
-                print("seq_clusters", seq_cluster_G)
-                if exclude == True:
-    
-                    clust_names = seq_cluster_G.vs()["name"]
-                    print("clust_names", clust_names)
-                    cluster_to_exclude = candidate_to_remove(seq_cluster_G, clust_names, z = -5)
-                    print(cluster_to_exclude)
-                       
-                    #print('name', to_exclude)
-                    to_delete_ids_sub_G = [v.index for v in seq_cluster_G.vs if v['name'] in cluster_to_exclude]
-                    #print('vertix_id', to_delete_ids)
-                    seq_cluster_G.delete_vertices(to_delete_ids_sub_G) 
-    
-                    #to_delete_ids_G = [v.index for v in G.vs if v['name'] in cluster_to_exclude]
-                    #G.delete_vertices(to_delete_ids_G)
-    
-                    print("to_exclude_pre", to_exclude)
-                    to_exclude = to_exclude + cluster_to_exclude
-                    to_exclude = list(set(to_exclude))
-                    print("to_exclude_post", to_exclude)
-                    if to_exclude:       
-                        logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-                        print("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-    
-                hstates = []
-                seq_cluster = seq_cluster_G.vs()['name']
-                seq_cluster.sort()
-                print(seq_cluster)
-                cluster_seqnums_list.append(seq_cluster)
-        
-                filter_indices = seq_cluster
-                group_hstates = np.take(embedding_dict['aa_embeddings'], filter_indices, axis = 0)
-                group_hstates_list.append(group_hstates)
-                #Aprint(group_hstates.shape)
-        
-                cluster_names = [seq_names[i] for i in filter_indices]
-                cluster_names_list.append(cluster_names)
-           
-                cluster_seq = [seqs[i] for i in filter_indices]
-                cluster_seqs_list.append(cluster_seq)
-                to_exclude = list(set(to_exclude))
-        print("eq check", to_exclude, prev_to_exclude)
-        if set(to_exclude) == set(prev_to_exclude):
-           repeat = False
-        else:
-               cluster_seqs_list = [] 
-               cluster_seqnums_list = []
-               group_hstates_list = []
-               cluster_names_list= []
-    else:
-         if exclude == True:
-            clust_names = G.vs()["name"] 
-            to_exclude = candidate_to_remove(G, clust_names, z = -3)
-            print('name', to_exclude)
-            to_delete_ids = [v.index for v in G.vs if v['name'] in to_exclude]
-            #print('vertix_id', to_delete_ids)
-            G.delete_vertices(to_delete_ids) 
-    
-            logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-    
-         else:
-           logging.info("Not removing outlier sequences")
-           to_exclude = []
- 
- 
-        # #print([v['name'] for v in G.vs])
-         cluster_seqnums_list =  [v['name'] for v in G.vs]
-         print(cluster_seqnums_list, to_exclude)
-         cluster_seqnums_list = list(set(cluster_seqnums_list))
-         cluster_seqnums_list.sort()
-         # Make sure this is removing to_exclude corectly
-         cluster_seqs_list = [[seqs[i] for i in cluster_seqnums_list]]
-         cluster_names_list = [[seq_names[i] for i in cluster_seqnums_list]]
-         group_hstates_list = [np.take(embedding_dict['aa_embeddings'], cluster_seqnums_list, axis = 0)]
-         cluster_seqnums_list = [cluster_seqnums_list] 
-         to_exclude = list(set(to_exclude))
-
-    print("seqnum clusters", cluster_seqnums_list)
-    print(cluster_names_list)
-    return(cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, group_hstates_list, to_exclude)
-
 
 def get_seqsim_args():
 
@@ -502,8 +339,9 @@ if __name__ == '__main__':
     headnorm = args.headnorm
     seqsim_thresh  = args.seqsimthresh 
     k = args.k
+
     # Keep to demonstrate effect of clustering or not
-    do_clustering = True
+    #do_clustering = True
  
     logname = "align.log"
     #print("logging at ", logname)
@@ -511,10 +349,6 @@ if __name__ == '__main__':
              "%(filename)s::%(lineno)d::%(message)s"
     logging.basicConfig(filename=logname, level='DEBUG', format=log_format)
 
-    #logging.info("Check for torch")
-    #logging.info(torch.cuda.is_available())
-
-    #model_name = 'prot_bert_bfd'
 
 
     if heads is not None:
@@ -529,7 +363,7 @@ if __name__ == '__main__':
     logging.info("Check for torch")
     logging.info(torch.cuda.is_available())
 
-    padding = 50 
+    padding = 0 
 
     logging.info("model: {}".format(model_name))
     logging.info("fasta: {}".format(fasta_path))
@@ -577,8 +411,8 @@ if __name__ == '__main__':
             
 
 
-    G= get_seqsims(seqs, embedding_dict, seqsim_thresh = seqsim_thresh, k = k, s_index = s_index)
-    #print(seq_names)
+    G = get_seqsims(seqs, embedding_dict, seqsim_thresh = seqsim_thresh, k = k, s_index = s_index)
+
     print("similarities made", time() - true_start)
     print(outfile)
     print("#_vertices", len(G.vs()))
@@ -602,3 +436,168 @@ if __name__ == '__main__':
     # Padding irrelevant at this point 
     #cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, cluster_hstates_list, to_exclude = get_seq_groups(seqs ,seq_names, embedding_dict, logging, exclude, do_clustering, seqsim_thresh = seqsim_thresh)
 
+
+#def cluster_seqsims(edges, weights):
+#
+#    # Convert to graph object
+#    
+#    to_exclude = []
+#
+#   
+#    group_hstates_list = []
+#    cluster_seqnums_list = []
+#    cluster_names_list = []
+#    cluster_seqs_list = []
+#   
+#
+#    # TODO use two variable names for spaced and unspaced seqs
+#    logging.info("Removing spaces from sequences")
+#    #if padding:
+#    #    seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
+#    #else:
+#    #    seqs = [x.replace(" ", "") for x in seqs]
+#    #prev_to_exclude = []
+#    if do_clustering == True:
+#        #print("fastgreedy")
+#        #print(G)
+#    
+#      repeat = True
+#      while repeat == True:
+#
+#        group_hstates_list = []
+#        cluster_seqnums_list = []
+#        cluster_names_list = []
+#        cluster_seqs_list = []
+# 
+#        prev_to_exclude = to_exclude
+#        
+#
+#    
+#        print("GG", G.vs()['name'])
+#        print("GG", G.es()['weight'])
+#        edgelist = []
+#        weightlist = []
+#        for edge in G.es():
+#             print(edge, edge['weight'])
+#             if G.vs[edge.target]["name"] not in to_exclude:
+#                  if G.vs[edge.source]["name"] not in to_exclude:
+#                     edgelist.append([ G.vs[edge.source]["name"], G.vs[edge.target]["name"]])
+#                     weightlist.append(edge['weight'])
+#        # Rebuild G
+#        G = igraph.Graph.TupleList(edges=edgelist, directed=False)
+#        G.es['weight'] = weightlist
+#        print("G", G)
+#
+#
+#
+#        seq_clusters = G.community_multilevel(weights = 'weight')
+#        ## The issue with walktrap is that the seq sim graph is near fully connected
+#        print("multilevel", seq_clusters)
+#        seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
+#        print("walktrap", seq_clusters)
+#        seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
+#        print("fastgreedy", seq_clusters)
+#
+#        seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
+#        #for x in seq_clusters.subgraphs():
+#        #     print("subgraph", x)      
+#        if len(seq_clusters.subgraphs()) == len(G.vs()):
+#        #     #seq_cluster = seq_clusters.vs()['name']
+#             seq_clusters = G.clusters(mode = "weak") # walktrap can cluster nodes individually. See UBQ
+#         #                     # If that happens, use original graph
+#         #    print("is this happening")
+#
+#        # Spinglass doesn't work on disconnected graphs
+#        # Spinglass wins. See  Eg. Extradiol_dioxy 
+#        #G_weak  = G.clusters(mode = "weak")
+#        #for sub_G in G_weak.subgraphs():
+#        #    sub_seq_clusters = sub_G.community_spinglass(weights = 'weight') 
+#        #        
+#        #    print("spinglass", sub_seq_clusters)
+#        #    for seq_cluster_G in sub_seq_clusters.subgraphs():
+#        print("walktrap", seq_clusters)
+#        for seq_cluster_G in seq_clusters.subgraphs():
+#        
+#                # Do exclusion within clusters
+#                print("seq_clusters", seq_cluster_G)
+#                if exclude == True:
+#    
+#                    clust_names = seq_cluster_G.vs()["name"]
+#                    print("clust_names", clust_names)
+#                    cluster_to_exclude = candidate_to_remove(seq_cluster_G, clust_names, z = -5)
+#                    print(cluster_to_exclude)
+#                       
+#                    #print('name', to_exclude)
+#                    to_delete_ids_sub_G = [v.index for v in seq_cluster_G.vs if v['name'] in cluster_to_exclude]
+#                    #print('vertix_id', to_delete_ids)
+#                    seq_cluster_G.delete_vertices(to_delete_ids_sub_G) 
+#    
+#                    #to_delete_ids_G = [v.index for v in G.vs if v['name'] in cluster_to_exclude]
+#                    #G.delete_vertices(to_delete_ids_G)
+#    
+#                    print("to_exclude_pre", to_exclude)
+#                    to_exclude = to_exclude + cluster_to_exclude
+#                    to_exclude = list(set(to_exclude))
+#                    print("to_exclude_post", to_exclude)
+#                    if to_exclude:       
+#                        logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
+#                        print("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
+#    
+#                hstates = []
+#                seq_cluster = seq_cluster_G.vs()['name']
+#                seq_cluster.sort()
+#                print(seq_cluster)
+#                cluster_seqnums_list.append(seq_cluster)
+#        
+#                filter_indices = seq_cluster
+#                group_hstates = np.take(embedding_dict['aa_embeddings'], filter_indices, axis = 0)
+#                group_hstates_list.append(group_hstates)
+#                #Aprint(group_hstates.shape)
+#        
+#                cluster_names = [seq_names[i] for i in filter_indices]
+#                cluster_names_list.append(cluster_names)
+#           
+#                cluster_seq = [seqs[i] for i in filter_indices]
+#                cluster_seqs_list.append(cluster_seq)
+#                to_exclude = list(set(to_exclude))
+#        print("eq check", to_exclude, prev_to_exclude)
+#        if set(to_exclude) == set(prev_to_exclude):
+#           repeat = False
+#        else:
+#               cluster_seqs_list = [] 
+#               cluster_seqnums_list = []
+#               group_hstates_list = []
+#               cluster_names_list= []
+#    else:
+#         if exclude == True:
+#            clust_names = G.vs()["name"] 
+#            to_exclude = candidate_to_remove(G, clust_names, z = -3)
+#            print('name', to_exclude)
+#            to_delete_ids = [v.index for v in G.vs if v['name'] in to_exclude]
+#            #print('vertix_id', to_delete_ids)
+#            G.delete_vertices(to_delete_ids) 
+#    
+#            logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
+#    
+#         else:
+#           logging.info("Not removing outlier sequences")
+#           to_exclude = []
+# 
+# 
+#        # #print([v['name'] for v in G.vs])
+#         cluster_seqnums_list =  [v['name'] for v in G.vs]
+#         print(cluster_seqnums_list, to_exclude)
+#         cluster_seqnums_list = list(set(cluster_seqnums_list))
+#         cluster_seqnums_list.sort()
+#         # Make sure this is removing to_exclude corectly
+#         cluster_seqs_list = [[seqs[i] for i in cluster_seqnums_list]]
+#         cluster_names_list = [[seq_names[i] for i in cluster_seqnums_list]]
+#         group_hstates_list = [np.take(embedding_dict['aa_embeddings'], cluster_seqnums_list, axis = 0)]
+#         cluster_seqnums_list = [cluster_seqnums_list] 
+#         to_exclude = list(set(to_exclude))
+#
+#    print("seqnum clusters", cluster_seqnums_list)
+#    print(cluster_names_list)
+#    return(cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, group_hstates_list, to_exclude)
+#
+#

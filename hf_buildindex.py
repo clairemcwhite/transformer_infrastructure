@@ -35,14 +35,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 
 def get_index(embedding_dict, index = None):
-    hidden_states = np.array(embedding_dict['sequence_embeddings']) 
+    np_embeddings = np.array(embedding_dict['sequence_embeddings']) 
     if not index:
         print("Create index")
-        d = hidden_states.shape[1]
+        d = np_embeddings.shape[1]
         index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
 
-    faiss.normalize_L2(hidden_states)
-    index.add(hidden_states)
+    faiss.normalize_L2(np_embeddings)
+    index.add(np_embeddings)
     return(index)
 
 
@@ -105,17 +105,21 @@ if __name__ == '__main__':
     logging.info("Check for torch")
     logging.info(torch.cuda.is_available())
 
-    padding = 50 
+    padding = 0 
 
     logging.info("model: {}".format(model_name))
     logging.info("fastas: {}".format(fasta_paths))
     logging.info("padding: {}".format(padding))
     index = None 
-    for fasta_path in fasta_paths: 
+    count = 0
+
+    index_key_outfile = "{}.idmapping".format(outfile) 
+    with open(index_key_outfile, "w") as ok:
+        for fasta_path in fasta_paths: 
         
-          seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding)
-          seqlens = [len(x) for x in seqs] 
-          embedding_dict = get_embeddings(seqs_spaced,
+            seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding)
+            seqlens = [len(x) for x in seqs] 
+            embedding_dict = get_embeddings(seqs_spaced,
                                     model_name,
                                     seqlens = seqlens,
                                     get_sequence_embeddings = True,
@@ -123,6 +127,14 @@ if __name__ == '__main__':
                                     layers = layers,  
                                     padding = padding,
                                     heads = headnames)
-          index = get_index(embedding_dict, index)
-          faiss.write_index(index, outfile)
-          print("{} added to index".format(fasta_path))
+            index = get_index(embedding_dict, index)
+            faiss.write_index(index, outfile)
+            # print("{} added to index".format(fasta_path))
+            # Write mapping of sequence name o
+            for seq_name in seq_names:
+                 key_string =  "{},{}\n".format(seq_name, count)
+                 ok.write(key_string)
+                 count = count + 1 
+
+
+
