@@ -71,6 +71,9 @@ def get_index_args():
 
     parser.add_argument("-l2", "--headnorm", dest = "headnorm",  action = "store_true", required = False, 
                         help="Take L2 normalization of each head")
+
+    parser.add_argument("-t", "--truncate", dest = "truncate",  type = int, required = False, default = 12000,
+                        help="Default 12000. (23000 is too long)")
  
 
     args = parser.parse_args()
@@ -90,6 +93,7 @@ if __name__ == '__main__':
     model_name = args.model_name
     pca_plot = args.pca_plot
     headnorm = args.headnorm
+    truncate = args.truncate
     # Keep to demonstrate effect of clustering or not
  
 
@@ -122,7 +126,7 @@ if __name__ == '__main__':
     with open(index_key_outfile, "a") as ok:
         for fasta_path in fasta_paths: 
         
-            seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding)
+            seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, truncate = truncate, padding = padding)
             seqlens = [len(x) for x in seqs] 
             embedding_dict = get_embeddings(seqs_spaced,
                                     model_name,
