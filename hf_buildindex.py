@@ -114,7 +114,12 @@ if __name__ == '__main__':
     count = 0
 
     index_key_outfile = "{}.idmapping".format(outfile) 
-    with open(index_key_outfile, "w") as ok:
+
+    if os.path.exists(index_key_outfile):
+       print("Warning, appending to existing file")
+       print("If unwanted, remove previous index before starting")
+
+    with open(index_key_outfile, "a") as ok:
         for fasta_path in fasta_paths: 
         
             seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding)
