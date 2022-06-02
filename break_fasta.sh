@@ -5,7 +5,7 @@ do
     then
         tmp_outfile=${line#>}
         tmp_outfile2=${tmp_outfile%% *}
-        outfile=${tmp_outfile2##*|}.fa
+        outfile=${tmp_outfile2##*|}.fasta
         
         echo $line > "$outfile"
     else
