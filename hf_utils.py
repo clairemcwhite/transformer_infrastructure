@@ -5,6 +5,19 @@ import torch
 import faiss
 import numpy as np
 
+def load_model(model_path):
+    '''
+    Takes path to huggingface model directory
+    Returns the model and the tokenizer
+    '''
+    print("load tokenizer")
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    print("load model")
+    model = AutoModel.from_pretrained(model_path, output_hidden_states=True)
+
+    return(model, tokenizer)
+
 
 ### AA class
 class AA:
@@ -31,7 +44,7 @@ def format_sequence(sequence, add_spaces = True):
        seq_spaced = sequence
 
    else:
-       seq_spaced = sequence
+       seq_spaced = " ".join(list(sequence))
 
    return seq_spaced
 
@@ -81,14 +94,18 @@ def get_sequencelabel_tags(labels):
 
 
 ### Similarity
-def build_index_flat(hidden_states):
+def build_index_flat(hidden_states, scoretype = "cosinesim", index = None):
 
-    # ISSUE ex. ghf34, where negative returned
-    d = hidden_states.shape[1]
-    index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
-    #index = faiss.index_factory(d, f"SQ4", faiss.METRIC_INNER_PRODUCT)
-    #index.train(hidden_states)
-    #index =  faiss.IndexFlatIP(d)
+
+    if not index:
+        d = hidden_states.shape[1]
+        if scoretype == "euclidean":
+           # Not working right, do tests before using
+           index = faiss.index_factory(d, "Flat", faiss.METRIC_L2)
+           faiss.normalize_L2(hidden_states)
+        else:
+            index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
+
     faiss.normalize_L2(hidden_states)
     index.add(hidden_states)
     return(index)

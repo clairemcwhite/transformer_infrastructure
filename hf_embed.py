@@ -90,6 +90,8 @@ def get_embed_args():
                         help="path to a fasta of protein sequences")
     parser.add_argument("-o", "--outpickle", dest = "pkl_out", type = str, required = False,
                         help="Optional: output .pkl filename to save embeddings in")
+    parser.add_argument("-ss", "--strategy", dest = "strat", type = str, required = False, default = "meansig", choices = ['mean','meansig'],
+                        help="For sequences, get embeddings of mean, or two embeddings, one mean, one sigma. Choice of mean or meansig. Default: meansig")
     parser.add_argument("-s", "--get_sequence_embeddings", dest = "get_sequence_embeddings", action = "store_true",
                         help="Flag: Whether to get sequence embeddings")
     parser.add_argument("-a", "--get_aa_embeddings", dest = "get_aa_embeddings", action = "store_true",
@@ -117,7 +119,7 @@ def get_embed_args():
     
     return(args)
 
-def parse_fasta_for_embed(fasta_path, truncate = None, padding = 5):
+def parse_fasta_for_embed(fasta_path, truncate = None, padding = 5, minlength = 1):
    ''' 
    Load a fasta of protein sequences and
      add a space between each amino acid in sequence (needed to compute embeddings)
@@ -140,6 +142,9 @@ def parse_fasta_for_embed(fasta_path, truncate = None, padding = 5):
        if truncate:
           print("truncating to {}".format(truncate))
           seq = seq[0:truncate]
+
+       if len(seq) < minlength:
+           continue
 
        sequences.append(seq)
        if padding > 0: 
@@ -358,7 +363,7 @@ class ListDataset(Dataset):
 #    return builder
 
 
-def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, get_aa_embeddings = True, padding = 5, ragged_arrays = False, aa_pcamatrix_pkl = None, sequence_pcamatrix_pkl = None, heads = None, layers = None):
+def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, get_aa_embeddings = True, padding = 5, ragged_arrays = False, aa_pcamatrix_pkl = None, sequence_pcamatrix_pkl = None, heads = None, layers = None, strat="meansig"):
     '''
     Encode sequences with a transformer model
 
@@ -408,6 +413,7 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
 
     # Need to concatenate output of each chunk
     sequence_array_list = []
+    sequence_sigma_array_list = []
     aa_array_list = []
 
     if sequence_pcamatrix_pkl:
@@ -463,11 +469,32 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                 if get_sequence_embeddings == True:
                      # Get sentence embeddings by averaging aa embeddings
                      sequence_embeddings = np.mean(aa_embeddings, axis = 1)
+
+                     if strat == "meansig":
+                          sequence_embeddings_sigma = np.std(aa_embeddings, axis = 1)
+                          sequence_sigma_array_list.append(sequence_embeddings_sigma)
+                          #means = np.mean(aa_embeddings, axis = 1)
+                          #variances = np.var(aa_embeddings, axis = 1)
+                          #print("means", means.shape)
+                          #print("variances", variances.shape)
+                          #print("aa_shape", aa_embeddings.shape)
+                          ## Sample from normal distribution centered around 0 with variance
+                          #f1 = lambda x: np.random.normal(0, np.sqrt(x))
+                          #variance_corrections = f1(variances) / np.sqrt(aa_shape[0])
+
+                          #sequence_embeddings  = means + variance_corrections
+                          #print("sequence_embeddings.shape", sequence_embeddings.shape)
+                     #Mean and variance
+                     # Instead of euclidean distance, difference of gaussian 
+                     # Total variation distance between distributions                         
+
+
                      if sequence_pcamatrix_pkl:
                         sequence_embeddings = apply_pca(sequence_embeddings, seq_pcamatrix, seq_bias)
    
 
                      sequence_array_list.append(sequence_embeddings)
+
 
                 if aa_pcamatrix_pkl:
                     aa_embeddings = np.apply_along_axis(apply_pca, 2, aa_embeddings, aa_pcamatrix, aa_bias)
@@ -517,6 +544,8 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
 
         if get_sequence_embeddings == True:
             embedding_dict['sequence_embeddings'] = np.concatenate(sequence_array_list)
+            if strat == "meansig":
+                embedding_dict['sequence_embeddings_sigma'] = np.concatenate(sequence_sigma_array_list)
 
         if get_aa_embeddings == True:
 
@@ -579,7 +608,8 @@ if __name__ == "__main__":
                                     heads = headnames,
                                     ragged_arrays = args.ragged_arrays,
                                     aa_pcamatrix_pkl = args.aa_pcamatrix_pkl, 
-                                    sequence_pcamatrix_pkl = args.sequence_pcamatrix_pkl)
+                                    sequence_pcamatrix_pkl = args.sequence_pcamatrix_pkl,
+                                    strat = args.strat)
    
     # Reduce sequence dimension with a new pca transform 
     if args.sequence_target_dim:

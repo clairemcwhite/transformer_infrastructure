@@ -1,9 +1,31 @@
 #!/usr/bin/env python3
 
+
+#from statistics import NormalDist
+
+# sigma = standarddev/sqrt(n)
+
+# Store 1 array of mu
+# Store 1 array of sigma
+# search with mu to limit
+# In limited space, do below 
+
+#NormalDist(mu=2.5, sigma=1).overlap(NormalDist(mu=5.0, sigma=1))
+
+# take average of all overlaps
+#[0.1, 0.9, 0.3, 0.3] -> 0.8
+
+# sqrt(sum of squares) for example 
+# third root (sum of x^3's)
+# The higher power, the more you pick up maximums. 
+# Higher weights values closer to 1 higher
+
 import torch
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
-
+from statistics import NormalDist
+from scipy.stats import entropy
+from scipy.sparse import diags
 import random
 from transformer_infrastructure.hf_utils import build_index_flat, build_index_voronoi
 from transformer_infrastructure.run_tests import run_tests
@@ -13,7 +35,8 @@ from Bio import SeqIO
 from Bio.Align import MultipleSeqAlignment
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
+from scipy.stats import multivariate_normal
+#import tensorflow as tf
 from time import time
 from sklearn.preprocessing import normalize
 import faiss
@@ -35,10 +58,35 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 # This is in the goal of finding sequences that poorly match before aligning
 # SEQSIM
-def graph_from_distindex(index, dist, seqsim_thresh = 0):  
-    # THIS ISN'T right for prebuilt index
-    # Search get index of query? 
-    # Or add query sequences to index?
+
+
+
+
+def kl_mvn(m0, S0, m1, S1):
+    """
+    Kullback-Liebler divergence from Gaussian pm,pv to Gaussian qm,qv.
+    Also computes KL divergence from a single Gaussian pm,pv to a set
+    of Gaussians qm,qv.
+    
+
+    From wikipedia
+    KL( (m0, S0) || (m1, S1))
+         = .5 * ( tr(S1^{-1} S0) + log |S1|/|S0| + 
+                  (m1 - m0)^T S1^{-1} (m1 - m0) - N )
+    """
+    # store inv diag covariance of S1 and diff between means
+    N = m0.shape[0]
+    iS1 = np.linalg.inv(S1)
+    diff = m1 - m0
+
+    # kl is made of three terms
+    tr_term   = np.trace(iS1 @ S0)
+    det_term  = np.log(np.linalg.det(S1)/np.linalg.det(S0)) #np.sum(np.log(S1)) - np.sum(np.log(S0))
+    quad_term = diff.T @ np.linalg.inv(S1) @ diff #np.sum( (diff*diff) * iS1, axis=1)
+    #print(tr_term,det_term,quad_term)
+    return .5 * (tr_term + det_term + quad_term - N) 
+
+def graph_from_distindex(index, dist, seqsim_thresh = 0, scoretype = "cosinesim"):  
     print("Create graph from dist index with threshold {}".format(seqsim_thresh))
     edges = []
     weights = []
@@ -56,9 +104,15 @@ def graph_from_distindex(index, dist, seqsim_thresh = 0):
           edge = (i, index[i, j])
           #if edge not in order_edges:
           # Break up highly connected networks, simplify clustering
-          if weight >= seqsim_thresh:
-              edges.append(edge)
-              weights.append(weight)
+          if scoretype == "cosinesim":
+              if weight >= seqsim_thresh:
+                  edges.append(edge)
+                  weights.append(weight)
+          if scoretype == "euclidean":
+              if weight <= seqsim_thresh:
+                  edges.append(edge)
+                  weights.append(weight)
+
     print("edge preview", edges[0:10])
     G = igraph.Graph.TupleList(edges=edges, directed=True) # Prevent target from being placed first in edges
     G.es['weight'] = weights
@@ -227,13 +281,13 @@ def seq_index_search(sentence_array, k_select, s_index = None):
 
     #print("sentence_array", sentence_array)
     if not s_index:
-        s_index = build_index_flat(sentence_array)
+        s_index = build_index_flat(sentence_array, dist = "cosinesim")
 
     faiss.normalize_L2(sentence_array)
     s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
     return(s_distance, s_index2)
 
-def get_seqsims(seqs, embedding_dict, seqsim_thresh = 0.75, k = None, s_index = None):
+def get_seqsims(seqs, embedding_dict, seqsim_thresh = 0.75, k = None, s_index = None, s_sigma_index = None, scoretype = "cosinesim"):
     numseqs = len(seqs)
 
     print("seqsim_thresh", seqsim_thresh)
@@ -255,15 +309,23 @@ def get_seqsims(seqs, embedding_dict, seqsim_thresh = 0.75, k = None, s_index = 
        k_select = k
     else:
        k_select = numseqs
-    sentence_array = np.array(embedding_dict['sequence_embeddings']) 
+    sentence_array = np.array(embedding_dict['sequence_embeddings']).astype(np.float32) 
     start_time = time()
 
     print("Searching index")
     s_distance, s_index2 = seq_index_search(sentence_array, k_select, s_index)
+    #s_distance = (2-s_distance)/2
+
     end_time = time()
     print("Index searched for {} sequences in {} seconds".format(numseqs, end_time - start_time))
+    #if s_sigma_index:
+    print("get_seqsims:s_index2:",s_index2) 
+        
+
+    
+    #else:
     start_time = time()
-    G = graph_from_distindex(s_index2, s_distance, seqsim_thresh)
+    G = graph_from_distindex(s_index2, s_distance, seqsim_thresh, scoretype)
     end_time = time()
     print("Index converted to edges in {} seconds".format(end_time - start_time))
     return(G)
@@ -285,11 +347,15 @@ def get_seqsim_args():
     parser.add_argument("-ex", "--exclude", dest = "exclude", action = "store_true",
                         help="Exclude outlier sequences from initial alignment process")
 
-    parser.add_argument("-dx", "--index", dest = "index_file", required = False,
-                        help="Prebuilt index")
+    parser.add_argument("-dx", "--index_means", dest = "index_file", required = False,
+                        help="Prebuilt index of means")
+    parser.add_argument("-dxs", "--index_sigmas", dest = "index_file_sigmas", required = False,
+                        help="Prebuilt index of sigmas (standard deviations)")
     parser.add_argument("-dxn", "--index_names", dest = "index_names_file", required = False,
                         help="Prebuilt index names, One protein name per line, in order added to index")
 
+    parser.add_argument("-ss", "--strategy", dest = "strat", type = str, required = False, default = "mean", choices = ['mean','meansig'],
+                        help="Whether to search with cosine similarity of mean only, or follow by comparison of gaussians")
 
     parser.add_argument("-fx", "--fully_exclude", dest = "fully_exclude", action = "store_true",
                         help="Additionally exclude outlier sequences from final alignment")
@@ -301,7 +367,8 @@ def get_seqsim_args():
 
     parser.add_argument("-st", "--seqsimthresh", dest = "seqsimthresh",  type = float, required = False, default = 0.75,
                         help="Similarity threshold for clustering sequences")
-
+    parser.add_argument("-s", "--scoretype", dest = "scoretype",  type = str, required = False, default = "cosinesim", choices = ["cosinesim", "euclidean"],
+                        help="How to calculate initial sequence similarity score")
     parser.add_argument("-k", "--knn", dest = "k",  type = int, required = False,
                         help="Limit edges to k nearest neighbors")
 
@@ -321,6 +388,13 @@ def get_seqsim_args():
     return(args)
 
 
+def kl_gauss(m1, m2, s1, s2):
+    kl = np.log(s2/s1) + (s1**2 + (m1-m2)**2)/(2*s2**2) - 1/2
+    return(kl)
+
+def get_ovl(m1, m2, s1, s2):
+   ovl = NormalDist(mu=m1, sigma=s1).overlap(NormalDist(mu=m2, sigma=s2)) 
+   return(ovl)
 if __name__ == '__main__':
     true_start = time()
     args = get_seqsim_args()
@@ -333,15 +407,17 @@ if __name__ == '__main__':
     layers = args.layers
     heads = args.heads
     index_file = args.index_file
+    index_file_sigmas = args.index_file_sigmas
     index_names_file = args.index_names_file
     model_name = args.model_name
     pca_plot = args.pca_plot
     headnorm = args.headnorm
     seqsim_thresh  = args.seqsimthresh 
     k = args.k
-
+    strat = args.strat 
+    scoretype = args.scoretype
     # Keep to demonstrate effect of clustering or not
-    #do_clustering = True
+    #do_clust   return(ovl)ering = True
  
     logname = "align.log"
     #print("logging at ", logname)
@@ -387,7 +463,8 @@ if __name__ == '__main__':
                                     get_aa_embeddings = False,
                                     layers = layers,  
                                     padding = padding,
-                                    heads = headnames)
+                                    heads = headnames, 
+                                    strat = strat)
     print("embeddings made", time() - true_start)
     print("getting sequence similarities") 
     if index_file:
@@ -396,208 +473,162 @@ if __name__ == '__main__':
             exit(1)
          else:
             with open(index_names_file, "r") as infile:
-                index_names = infile.readlines()
-                index_names = [x.replace("\n", "") for x in index_names]
+                #index_names = infile.readlines()
+                #index_names = [x.replace("\n", "").split(",") for x in index_names]
+                #Read as {idx:proteinID}
+                df = pd.read_csv(infile, header= None)
+                df.columns = ['prot', 'idx']
+
+                index_names = dict(zip(df.idx,df.prot))
+                #index_names = index_names.set_index(['idx'])
+                #print(index_names)
+                #index_names = index_names.to_dict('index')
+                #print(index_names) 
+                
          # Don't use seqnames from input fasta, use index seqnames
-         #seq_names = index_names
          start_time = time()
          s_index = faiss.read_index(index_file)
+         if strat == "meansig":
+            if index_file_sigmas:
+                s_sigma_index = faiss.read_index(index_file_sigmas)
+            else:
+                s_sigma_index = None
+                s_sigma_embeddings = np.array(embedding_dict['sequence_embeddings_sigma']).astype(np.float32)
+                s_sigma_index = build_index_flat(sigma_embeddings, s_sigma_index)
+
          end_time = time()
-         print("Loaded index in {} seconds".format(end_time - start_time))
+
+         print("Loaded index(es) in {} seconds".format(end_time - start_time))
 
     else:
          s_index = None
+         s_sigma_index = None
          index_names = seq_names
             
-
-
-    G = get_seqsims(seqs, embedding_dict, seqsim_thresh = seqsim_thresh, k = k, s_index = s_index)
+    #kl = tf.keras.losses.KLDivergence()
+    # Step 1: Use means to get local area of sequences
+    G = get_seqsims(seqs, embedding_dict, seqsim_thresh = seqsim_thresh, k = k, s_index = s_index, scoretype = scoretype)
 
     print("similarities made", time() - true_start)
     print(outfile)
     print("#_vertices", len(G.vs()))
     print("query_names", len(seq_names))
     print("index_names", len(index_names))
+    complete = []
+    # Need to do this as a batch, not repeatedly
+    named_vertex_list = G.vs()["name"]
+
+    retrieve_start_time = time()
+    vertex_mean_dict =  dict([(x, s_index.reconstruct(int(x))) for x in named_vertex_list])     
+    vertex_sigma_dict = dict([(x, s_sigma_index.reconstruct(int(x))) for x in named_vertex_list])     
+    retrieve_end_time = time()
+    amount = retrieve_end_time - retrieve_start_time
+    print("Vectors retrieved from index in ", amount)
+    vec_kl_gauss = np.vectorize(kl_gauss)
+    vec_get_ovl = np.vectorize(get_ovl)
     with open(outfile, "w") as o:
-        
+        o.write("source,target,score,overlap,kl\n")
         for edge in G.es():
+           e_start = time()
            #print(edge)
-           #print(G.vs()[edge.source], G.vs()[edge.target])
-           source = seq_names[G.vs()[edge.source]['name']]
-           target = index_names[G.vs()[edge.target]['name']]
+           #print(G.vs()[edge.source], G.vs()[edge.target], edge['weight'])
+           source_idx = int(G.vs()[edge.source]['name'])
+           target_idx = int(G.vs()[edge.target]['name'])
+           if source_idx == -1:
+               continue
+           if target_idx == -1:
+               continue
+           source = seq_names[source_idx]
+           target = index_names[target_idx] 
            weight = edge['weight']
+          
+           d_start = time()
+           source_mean = vertex_mean_dict[source_idx]
+           source_sigma = vertex_sigma_dict[source_idx]
+           target_mean = vertex_mean_dict[target_idx]
+           target_sigma = vertex_sigma_dict[target_idx]
+           #d_end = time()
+           d_span = time()  -d_start
+
+           ##source_mean  =  s_index.reconstruct(source_idx)
+           #source_sigma  =  s_sigma_index.reconstruct(source_idx)
+           #target_mean  =  s_index.reconstruct(target_idx)
+           #target_sigma  =  s_sigma_index.reconstruct(target_idx)
+
+           #print("source_mean", source_mean)
+           #print("source_sigma", source_sigma)
+           #
+           # Do overlaps of each row
+           #arr =np.array([source_mean, target_mean, source_sigma, target_sigma])
+           #print(arr)
+           o_start = time()
+
+           # This is too slow
+           #overlaps = [NormalDist(mu=m1, sigma=s1).overlap(NormalDist(mu=m2, sigma=s2)) for m1, m2, s1, s2 in zip(source_mean, target_mean, source_sigma, target_sigma)]
+ 
+           #mean_overlap = np.mean(overlaps)
+           #o_end = time()
+           o_span = time() - o_start
+           #print(overlaps[0:5])
+           #overlaps = NormalDist(mu=source_mean, sigma=source_sigma).overlap(NormalDist(mu=target_mean, sigma=target_sigma))
+
+           m_start = time()
+
+           #print("start kl")
+           kls = vec_kl_gauss(source_mean, target_mean, source_sigma, target_sigma)
+           #print(kls)
+           kl_out = 1- np.mean(kls)       
+  
+           #kl = kl_mvn(source_mean, source_sigma, target_mean, target_sigma)
+           #dim = len(source_mean)
+           #source_cov = diags(source_sigma, 0).toarray()
+           #target_cov = diags(target_sigma, 0).toarray()
+           #source_cov = np.zeros((dim,dim))
+           #np.fill_diagonal(source_cov, source_sigma) # This is inplace
+           #target_cov = np.zeros((dim,dim))
+           #np.fill_diagonal(target_cov, target_sigma) # This is inplace
+
+           #np.random.seed(10)
+           m_span = time() - m_start
+           k_start = time()
+           #kls = [kl_gauss(m1, s1, m2, s2) for  m1, m2, s1, s2 in zip(source_mean, target_mean, source_sigma, target_sigma)]    
+           ovls = vec_get_ovl(source_mean, target_mean, source_sigma, target_sigma)
+           ovl = np.mean(ovls)
+           #x = np.random.normal(source_mean, source_sigma)
+           #y = np.random.normal(target_mean, target_sigma)
+           #x = np.random.default_rng().multivariate_normal(source_mean, source_cov, method = "cholesky", size = 1)
+           #y = np.random.default_rng().multivariate_normal(target_mean, target_cov, method = "cholesky", size  =1)
+          
+           #print(x)
+           #print(y)
+           #print("calc entropy") 
+           #kl_out = 0# entropy(x+ 0.0001,y+ 0.0001)
+           #print("end kl") 
+           #kl_out = kl(x, y).numpy()
+
+           #kl_out = kl_mvn(source_mean, source_cov, target_mean, target_cov)
+           #rv = multivariate_normal([mu_x, mu_y], [[sigma_x, 0], [0, sigma_y]])
+
+           k_span = time() - k_start
+
+           e_span = time() - e_start
+
+
+           #print( "ovl", ovl, "kl", kl_out,  "edge weight", edge['weight'],  "total_time", e_span,  "dict_time", d_span, "overlap_time", o_span, "vec_overlap time", k_span, "kl_time", m_span)
+           
+
+
+
            if source == target:
                 if weight < 0.99:
                       print("Warning, score for {} and {} should be close to 1, but is {}. check indices".format(source, target, weight))
                 continue
-           o.write("{},{},{:.5f}\n".format(source, target, weight))   
+           o.write("{},{},{:.5f},{:.5f},{:.5f}\n".format(source, target, weight, ovl, kl_out))   
     print("outfile made", time() - true_start)
+  
+    # Step 2: A this point take everything about mean similarity threshold and do distribution comparison
+#    for edge in G.es():
 
-    # Padding irrelevant at this point 
-    #cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, cluster_hstates_list, to_exclude = get_seq_groups(seqs ,seq_names, embedding_dict, logging, exclude, do_clustering, seqsim_thresh = seqsim_thresh)
+           #np.take(embedding_dict['sequence_embeddings'], [source_idx], axis = 0)   
+           #source_sigma  =# np.take(embedding_dict['sequence_embeddings_sigma'], [source_idx], axis = 0)   
 
-
-#def cluster_seqsims(edges, weights):
-#
-#    # Convert to graph object
-#    
-#    to_exclude = []
-#
-#   
-#    group_hstates_list = []
-#    cluster_seqnums_list = []
-#    cluster_names_list = []
-#    cluster_seqs_list = []
-#   
-#
-#    # TODO use two variable names for spaced and unspaced seqs
-#    logging.info("Removing spaces from sequences")
-#    #if padding:
-#    #    seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
-#    #else:
-#    #    seqs = [x.replace(" ", "") for x in seqs]
-#    #prev_to_exclude = []
-#    if do_clustering == True:
-#        #print("fastgreedy")
-#        #print(G)
-#    
-#      repeat = True
-#      while repeat == True:
-#
-#        group_hstates_list = []
-#        cluster_seqnums_list = []
-#        cluster_names_list = []
-#        cluster_seqs_list = []
-# 
-#        prev_to_exclude = to_exclude
-#        
-#
-#    
-#        print("GG", G.vs()['name'])
-#        print("GG", G.es()['weight'])
-#        edgelist = []
-#        weightlist = []
-#        for edge in G.es():
-#             print(edge, edge['weight'])
-#             if G.vs[edge.target]["name"] not in to_exclude:
-#                  if G.vs[edge.source]["name"] not in to_exclude:
-#                     edgelist.append([ G.vs[edge.source]["name"], G.vs[edge.target]["name"]])
-#                     weightlist.append(edge['weight'])
-#        # Rebuild G
-#        G = igraph.Graph.TupleList(edges=edgelist, directed=False)
-#        G.es['weight'] = weightlist
-#        print("G", G)
-#
-#
-#
-#        seq_clusters = G.community_multilevel(weights = 'weight')
-#        ## The issue with walktrap is that the seq sim graph is near fully connected
-#        print("multilevel", seq_clusters)
-#        seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
-#        print("walktrap", seq_clusters)
-#        seq_clusters = G.community_fastgreedy(weights = 'weight').as_clustering() 
-#        print("fastgreedy", seq_clusters)
-#
-#        seq_clusters = G.community_walktrap(steps = 3, weights = 'weight').as_clustering() 
-#        #for x in seq_clusters.subgraphs():
-#        #     print("subgraph", x)      
-#        if len(seq_clusters.subgraphs()) == len(G.vs()):
-#        #     #seq_cluster = seq_clusters.vs()['name']
-#             seq_clusters = G.clusters(mode = "weak") # walktrap can cluster nodes individually. See UBQ
-#         #                     # If that happens, use original graph
-#         #    print("is this happening")
-#
-#        # Spinglass doesn't work on disconnected graphs
-#        # Spinglass wins. See  Eg. Extradiol_dioxy 
-#        #G_weak  = G.clusters(mode = "weak")
-#        #for sub_G in G_weak.subgraphs():
-#        #    sub_seq_clusters = sub_G.community_spinglass(weights = 'weight') 
-#        #        
-#        #    print("spinglass", sub_seq_clusters)
-#        #    for seq_cluster_G in sub_seq_clusters.subgraphs():
-#        print("walktrap", seq_clusters)
-#        for seq_cluster_G in seq_clusters.subgraphs():
-#        
-#                # Do exclusion within clusters
-#                print("seq_clusters", seq_cluster_G)
-#                if exclude == True:
-#    
-#                    clust_names = seq_cluster_G.vs()["name"]
-#                    print("clust_names", clust_names)
-#                    cluster_to_exclude = candidate_to_remove(seq_cluster_G, clust_names, z = -5)
-#                    print(cluster_to_exclude)
-#                       
-#                    #print('name', to_exclude)
-#                    to_delete_ids_sub_G = [v.index for v in seq_cluster_G.vs if v['name'] in cluster_to_exclude]
-#                    #print('vertix_id', to_delete_ids)
-#                    seq_cluster_G.delete_vertices(to_delete_ids_sub_G) 
-#    
-#                    #to_delete_ids_G = [v.index for v in G.vs if v['name'] in cluster_to_exclude]
-#                    #G.delete_vertices(to_delete_ids_G)
-#    
-#                    print("to_exclude_pre", to_exclude)
-#                    to_exclude = to_exclude + cluster_to_exclude
-#                    to_exclude = list(set(to_exclude))
-#                    print("to_exclude_post", to_exclude)
-#                    if to_exclude:       
-#                        logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-#                        print("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-#    
-#                hstates = []
-#                seq_cluster = seq_cluster_G.vs()['name']
-#                seq_cluster.sort()
-#                print(seq_cluster)
-#                cluster_seqnums_list.append(seq_cluster)
-#        
-#                filter_indices = seq_cluster
-#                group_hstates = np.take(embedding_dict['aa_embeddings'], filter_indices, axis = 0)
-#                group_hstates_list.append(group_hstates)
-#                #Aprint(group_hstates.shape)
-#        
-#                cluster_names = [seq_names[i] for i in filter_indices]
-#                cluster_names_list.append(cluster_names)
-#           
-#                cluster_seq = [seqs[i] for i in filter_indices]
-#                cluster_seqs_list.append(cluster_seq)
-#                to_exclude = list(set(to_exclude))
-#        print("eq check", to_exclude, prev_to_exclude)
-#        if set(to_exclude) == set(prev_to_exclude):
-#           repeat = False
-#        else:
-#               cluster_seqs_list = [] 
-#               cluster_seqnums_list = []
-#               group_hstates_list = []
-#               cluster_names_list= []
-#    else:
-#         if exclude == True:
-#            clust_names = G.vs()["name"] 
-#            to_exclude = candidate_to_remove(G, clust_names, z = -3)
-#            print('name', to_exclude)
-#            to_delete_ids = [v.index for v in G.vs if v['name'] in to_exclude]
-#            #print('vertix_id', to_delete_ids)
-#            G.delete_vertices(to_delete_ids) 
-#    
-#            logging.info("Excluding following sequences: {}".format(",".join([str(x) for x in to_exclude])))
-#    
-#         else:
-#           logging.info("Not removing outlier sequences")
-#           to_exclude = []
-# 
-# 
-#        # #print([v['name'] for v in G.vs])
-#         cluster_seqnums_list =  [v['name'] for v in G.vs]
-#         print(cluster_seqnums_list, to_exclude)
-#         cluster_seqnums_list = list(set(cluster_seqnums_list))
-#         cluster_seqnums_list.sort()
-#         # Make sure this is removing to_exclude corectly
-#         cluster_seqs_list = [[seqs[i] for i in cluster_seqnums_list]]
-#         cluster_names_list = [[seq_names[i] for i in cluster_seqnums_list]]
-#         group_hstates_list = [np.take(embedding_dict['aa_embeddings'], cluster_seqnums_list, axis = 0)]
-#         cluster_seqnums_list = [cluster_seqnums_list] 
-#         to_exclude = list(set(to_exclude))
-#
-#    print("seqnum clusters", cluster_seqnums_list)
-#    print(cluster_names_list)
-#    return(cluster_seqnums_list, cluster_seqs_list,  cluster_names_list, group_hstates_list, to_exclude)
-#
-#

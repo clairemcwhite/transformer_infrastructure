@@ -15,8 +15,8 @@ def get_interpret_args():
     parser.add_argument("-s", "--sequence", dest = "sequence", type = str, required = False,
                         help="Single sequence as a string")
   
-    parser.add_argument("-st", "-sequence_table", dest = "sequence_path", type = str, required = False,
-                        help="Path to table of sequences to evaluate in csv (id,sequence) no header. Output of utils.parse_fasta")
+    #parser.add_argument("-st", "-sequence_table", dest = "sequence_path", type = str, required = False,
+    #                    help="Path to table of sequences to evaluate in csv (id,sequence) no header. Output of utils.parse_fasta")
     parser.add_argument("-f", "-fasta", dest = "fasta_path", type = str, required = False,
                         help="Path to fasta of sequences to evaluate")
 
@@ -37,21 +37,29 @@ def get_explainer(model_path):
     model = AutoModelForSequenceClassification.from_pretrained(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    print(model.device)
+
     # With both the model and tokenizer initialized we are now able to get explanations on an example text.
 
     cls_explainer = SequenceClassificationExplainer(
        model, 
        tokenizer)
+    print("got explainer")
 
+    print(model.config.id2label)
     return(cls_explainer)
 
 def explain_a_pred(sequence,cls_explainer):
 
     print(sequence[0:5])
-    word_attributions = cls_explainer(sequence)
+    word_attributions = cls_explainer(text = sequence)
 
+
+    print("got word attributions")
     pred_index = cls_explainer.predicted_class_index
-    pred_prob = cls_explainer.pred_probs
+    pred_prob = cls_explainer.pred_probs.cpu()
     pred_name = cls_explainer.predicted_class_name
 
   
@@ -60,9 +68,11 @@ def explain_a_pred(sequence,cls_explainer):
     #zip* converts tuple (aa, value) to two lists [aas], [values]
     aas, attributions = zip(*word_attributions[1:-1])
     positions =  np.arange(1, len(aas) + 1)
-  
+    print("formatted")
     # round to 8 digits
     return " ".join([str(x) for x in aas]), " ".join([str(round(x, 8)) for x in attributions]), " ".join([str(x) for x in positions]), pred_index, pred_prob, pred_name
+
+
 if __name__ == "__main__":
 
     args = get_interpret_args()
@@ -73,11 +83,20 @@ if __name__ == "__main__":
 
     if args.sequence:
        # This needs to be fixed
-       sequence = format_sequence(args.sequence, args.dont_add_spaces)
+       sequence = format_sequence(args.sequence, add_spaces = True)
        print(sequence)
-       word_attributions, pred_index, pred_prob, pred_name = explain_a_pred(sequence, explainer)
+
+
+
+       # Do something to remove long sequences
+       aas, word_attributions, pos,  pred_index, pred_prob, pred_name = explain_a_pred(sequence, explainer)
        #print(word_attributions.predicted_class_name)
-       print(word_attributions)
+       print("wa", word_attributions)
+       print("aas", aas)
+       print("pos", pos)
+       print("pred_index", pred_index)
+       print("pred_prob", pred_prob)
+       print("pred_name", pred_name)
        df = pd.DataFrame.from_records(word_attributions, columns = ['aa', 'contribution'])
        df['aa_position'] = np.arange(1, len(df) + 1)
        print(df)
@@ -90,14 +109,18 @@ if __name__ == "__main__":
 
     if args.fasta_path:
        fasta_tbl = args.fasta_path + ".txt"
-       sequence_lols = parse_fasta(args.fasta_path, fasta_tbl, args.dont_add_spaces)
+       sequence_lols = parse_fasta(args.fasta_path, fasta_tbl, True)
+       print(len(sequence_lols))
+       sequence_lols = [x for x in sequence_lols if len(x[1]) < 250]
+       print(len(sequence_lols))
 
        df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence', 'sequence_spaced']) 
 
-       df = df.head(50)
-       print(df)
-
+       #df = df.head(1)
+       #print(df)
+       pd.set_option('display.max_colwidth', None)
        df['output'] = df.apply(lambda row: explain_a_pred(row.sequence_spaced, explainer), axis = 1)
+       print(df['output'])
        
        # Split tuble to multiple columns
        df['aa'], df['word_attributions'], df['positions'], df['pred_index'], df['pred_prob'], df['pred_name'] = zip(*df.output)

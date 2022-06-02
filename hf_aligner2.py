@@ -287,7 +287,8 @@ def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to
     #print("start get ranges")
   
     #print(cluster_order, starting_clustid, ending_clustid) 
-    print('start, end', starting_clustid, ending_clustid)
+    #print('get_ranges:', seqs_aas)
+    #print('get_ranges: start, end', starting_clustid, ending_clustid)
     # if not x evaluates to true if x is zero 
     # If unassigned sequence goes to the end of the sequence
     if not ending_clustid and ending_clustid != 0:
@@ -295,12 +296,13 @@ def get_ranges(seqs_aas, cluster_order, starting_clustid, ending_clustid, pos_to
     # If unassigned sequence extends before the sequence
     if not starting_clustid and starting_clustid != 0:
        starting_clustid = -np.inf   
-    print('start, end', starting_clustid, ending_clustid)
+    #print('get_ranges: start, end', starting_clustid, ending_clustid)
 
     # cluster_order must be zero:n
     # Add assertion
     pos_lists = []
     for x in seqs_aas:
+            #print('get_ranges:x:', x)
             pos_list = []
             startfound = False
 
@@ -579,9 +581,12 @@ def address_stranded3(alignment):
          currclustid =cluster_order[i]         
          currclust = clustid_to_clust[currclustid]
          removeclust = False
+         # DON'T do stranding before bestmatch
+         # Because a good column can be sorted into gaps
          for aa in currclust:
-             print("cluster ", i,  aa.prevaa, aa.nextaa,prevclust,nextclust)
+             #print("cluster ", i,  aa.prevaa, aa.nextaa,prevclust,nextclust)
              if aa.prevaa not in prevclust and aa.nextaa not in nextclust:
+                  print("cluster ", i,  aa.prevaa, aa.nextaa,prevclust,nextclust)
                   print(aa, "in clust", currclust, "is stranded")
                   print("removing")
                   removeclust = True
@@ -1629,9 +1634,11 @@ def first_clustering(G,  betweenness_cutoff = .10, ignore_betweenness = False, a
         for sub_sub_G in sub_islands.subgraphs():
 
             # Should do a betweenness here again
-
-
+            print("first_clustering: betweenness cutoff", betweenness_cutoff, "apply_walktrap", apply_walktrap)
             new_clusters = get_new_clustering(sub_sub_G, betweenness_cutoff = betweenness_cutoff,  apply_walktrap = apply_walktrap) 
+            
+
+            print("first_clustering:adding", new_clusters, "to cluster_list")
             cluster_list = cluster_list + new_clusters
 
     print("cluster_list", cluster_list)
@@ -1656,22 +1663,53 @@ def get_new_clustering(G, betweenness_cutoff = 0.10,  apply_walktrap = True):
     else:
         min_dupped =  min_dup(connected_set, 1.2)
         # Only do walktrap is cluster is overlarge
+        print("min_dupped at start", min_dupped)      
+        names = [x['name'] for x in G.vs()]
+        print("names at start", names)
         if (len(connected_set) > min_dupped) and apply_walktrap and len(G.vs()) >= 5:
-            print("applying walktrap")
-            # Change these steps to 3??
-            # steps = 1 makes clear errors 
-            clustering = G.community_walktrap(steps = 2, weights = 'weight').as_clustering()
-            #i = 0
-            for sub_G in clustering.subgraphs():
-                 sub_connected_set =  sub_G.vs()['name']
-                 print("post cluster subgraph", sub_connected_set)
-                 
-                 # New clusters may be too large still, try division process w/ betweenness
-                 
-                 new_clusters = new_clusters + process_connected_set(sub_connected_set, sub_G, dup_thresh = 1.2, betweenness_cutoff = betweenness_cutoff) 
+            # First remove weakly linked aa's then try again
+            # Walktrap is last resort
+            print("similarity_jaccard, authority_score")
+            hub_scores = G.hub_score()
+            names = [x['name'] for x in G.vs()]
+            print(names)
+            vx_names = G.vs()
+            hub_names = list(zip(names, vx_names, hub_scores))
+            
+            #high_authority_nodes = [x[0] for x in hub_names if x[2]  > 0.2]
+            #print("high authority_nodes", high_authority_nodes)
+            high_authority_nodes_vx = [x[1] for x in hub_names if x[2]  > 0.2]
 
+            low_authority_nodes = [x[0] for x in hub_names if x[2]  <= 0.2]
+            print("removing low authority_nodes", low_authority_nodes)
+
+            if len(low_authority_nodes) > 0:
+                
+                G = G.subgraph(high_authority_nodes_vx)
+                names = [x['name'] for x in G.vs()]
+                print("names prior to new clusters", names)
+
+                min_dupped = min_dup(names, 1.2) 
+            if len(names) <= min_dupped:           
+                print("get_new_clustering:new_G", G)
+                new_clusters = new_clusters + process_connected_set(names, G, dup_thresh = 1.2, betweenness_cutoff = betweenness_cutoff)
+            else:
+                print("applying walktrap")
+                # Change these steps to 3??
+                # steps = 1 makes clear errors
+                print("len(connected_set, min_duppled", len(connected_set), min_dupped) 
+                clustering = G.community_walktrap(steps = 3, weights = 'weight').as_clustering()
+                #i = 0
+                for sub_G in clustering.subgraphs():
+                     sub_connected_set =  sub_G.vs()['name']
+                     print("post cluster subgraph", sub_connected_set)
+                     
+                     # New clusters may be too large still, try division process w/ betweenness
+                     
+                     new_clusters = new_clusters + process_connected_set(sub_connected_set, sub_G, dup_thresh = 1.2, betweenness_cutoff = betweenness_cutoff) 
+    
         else:
-
+            print("get_new_clustering:connected_set", connected_set)
             new_clusters = new_clusters + process_connected_set(connected_set, G, dup_thresh = 1.2, betweenness_cutoff = betweenness_cutoff)
         
 
@@ -1698,6 +1736,7 @@ def process_connected_set(connected_set, G, dup_thresh = 1.2,  betweenness_cutof
     3) If it's not very duplicated, removed any duplicates by best score
     '''
 
+    print("process_connected_set: betweenness", betweenness_cutoff, "dup_thresh", dup_thresh)
     new_clusters = []
     min_dupped =  min_dup(connected_set, dup_thresh)
     if len(connected_set) > min_dupped:
@@ -1707,13 +1746,13 @@ def process_connected_set(connected_set, G, dup_thresh = 1.2,  betweenness_cutof
         print("Check for betweenness")
        
         new_G = remove_highbetweenness(G, betweenness_cutoff = 0.10)
-        #print("prebet", G.vs()['name'])
-        #print("postbet", new_G.vs()['name'])
+        print("prebet", G.vs()['name'])
+        print("postbet", new_G.vs()['name'])
         #if len(new_Gs) > 1:
         new_islands = new_G.clusters(mode = "weak")
         for sub_G in new_islands.subgraphs():
                 sub_connected_set = sub_G.vs()['name']
-                #print("postbet_island", sub_connected_set)
+                print("postbet_island", sub_connected_set)
                 sub_min_dupped =  min_dup(sub_connected_set, dup_thresh) 
                 
 
@@ -1733,9 +1772,9 @@ def process_connected_set(connected_set, G, dup_thresh = 1.2,  betweenness_cutof
 
         #return(new_clusters)
     else:
-        #trimmed_connected_set = remove_doubles(connected_set, G, keep_higher_score = True)
-        #print("after trimming by removing doubles", trimmed_connected_set)
-        new_clusters = [connected_set] 
+        trimmed_connected_set = remove_doubles_by_graph(connected_set, G)
+        print("after trimming by removing doubles", trimmed_connected_set)
+        new_clusters = [trimmed_connected_set] 
     # If no new clusters, returns []
     return(new_clusters)
  
@@ -2385,12 +2424,13 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
     D1, I1 =  index.search(hidden_states, k = numseqs*20) 
     print("SHAPE", hidden_states.shape)
 
-
-    #a, test1_D = index.search(hidden_states[36], k = 500)
-    #print(test1_I)
-    #print(test1_D)
+    
+    #test1_I, test1_D = index.search(hidden_states[3], k = 50)
+   
+    print(D1)
     logging.info("Search index2 done")
-
+    D1 = (2-D1)/2
+    print(D1)    
     #print("Split results into proteins") 
     logging.info("Split results into proteins2") 
     I2 = split_distances_to_sequence2(D1, I1, index_to_aa, numseqs, seqlens) 
@@ -2404,10 +2444,10 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
     #print(I2)
     logging.info("get best hitlist")
     #print("get best hitlist")
-    minscore1 = 0.5
+    minscore1 = 0
  
     #return(0)
-    hitlist_all = get_besthits(I2, minscore = 0.75) # High threshold for first clustering 
+    hitlist_all = get_besthits(I2, minscore = 0) # High threshold for first clustering 
     
     #hitlist_all = get_besthits(D2, I2, seqnums, index_to_aa, padded_seqlen, minscore = minscore1)
     for x in hitlist_all:
@@ -2587,9 +2627,10 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
         history_unassigned['twobefore'] = history_unassigned['onebefore']
         history_unassigned['onebefore'] = unassigned
         apply_walktrap = False
+
         # Do one or two rounds of clustering between guideposts
         if gapfilling_attempt in list(range(1, 100,2)):#  or gapfilling_attempt in [1, 2, 3, 4]:
-            #logging.info("Do clustering within guideposts")
+
             print("Align by clustering within guideposts")
             # Don't allow modification of previous guideposts
             if gapfilling_attempt > 4:
@@ -2627,7 +2668,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
               if gapfilling_attempt < 15: 
                 # This removes 'stranded' amino acids. 
                 # If a good cluster, will be added right back
-               cluster_order, clustid_to_clust = address_stranded3(alignment)
+               #cluster_order, clustid_to_clust = address_stranded3(alignment)
                alignment = make_alignment(cluster_order, seqnums, clustid_to_clust) 
                clusterlist = list(clustid_to_clust.values())
                new_clusterlist = []
@@ -2984,12 +3025,14 @@ def fill_in_unassigned_w_clustering(unassigned, seqs_aas, cluster_order, clustid
     If a new member of an rbh cluster has a large unassigned range, check if has higher rbh t o sequence?
     '''
     clusters_filt = list(clustid_to_clust.values())
-    print("TESTING OUT CLUSTERS_FILT")
+    print("fill_in_unassigned_w_clustering: TESTING OUT CLUSTERS_FILT")
     for x in clusters_filt:
-        print("preassignment clusters_filt", x)
+        print("fill_in_unassigned_w_clustering: preassignment clusters_filt", x)
     # extra arguments?
     edgelist = []
+    print("fill_in_unassigned_w_clustering:unassigned", unassigned)
     for gap in unassigned:
+        print(gap)
         gap_edgelist = get_targets(gap, seqs_aas, cluster_order, pos_to_clustid)
         edgelist = edgelist + gap_edgelist
 
@@ -3011,20 +3054,9 @@ def fill_in_unassigned_w_clustering(unassigned, seqs_aas, cluster_order, clustid
        #print("neighbors", neighbors)
 
 
-       newer_clusters, newer_rbh = address_unassigned_aas(sub_G.vs()['name'], neighbors, I2, minscore = 0.5, ignore_betweenness = False,  betweenness_cutoff = 0.3, minsclustsize = 2, apply_walktrap = True)
+       newer_clusters, newer_rbh = address_unassigned_aas(sub_G.vs()['name'], neighbors, I2, minscore = 0.5, ignore_betweenness = False,  betweenness_cutoff = 0.3, minsclustsize = 2, apply_walktrap = apply_walktrap)
        new_clusters_from_rbh  = new_clusters_from_rbh + newer_clusters
 
-       #newer_rbhs = newer_rbhs + newer_rbh
-
-    #unique_rbhs = [list(x) for x in set(tuple(x) for x in newer_rbhs)]
-
-    #iG2 = graph_from_rbh(unique_rbhs)
-    #new_clusters_list = dedup_clusters(new_clusters, G2, minclustsize)
-
-    # Going to do an additional step
-    # If a cluster has doubles
-    # See if there is overlap with another cluster
-    # See if removing the overlap amino acids resolves the doubles
     #
     new_clusters = []
     too_small = []
@@ -3085,8 +3117,9 @@ def fill_in_unassigned_w_clustering(unassigned, seqs_aas, cluster_order, clustid
                print(pos, clustid)
             else:
                 # Position wasn't previously clustered
-                print("new_additions", clust,pos)
+                #print("new_additions", clust,pos)
                 new_additions.append(pos)
+         print("new_additions", new_additions)
          #print("posids", posids)                  
          if len(list(set(clustids))) > 1:
             #print("new cluster contains component of multiple previous clusters. Keeping largest matched cluster")
@@ -3114,129 +3147,6 @@ def fill_in_unassigned_w_clustering(unassigned, seqs_aas, cluster_order, clustid
 
 
  
-def fill_in_unassigned_w_clustering_old(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, I2,  minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.3, apply_walktrap = True ):        
-    '''
-    Run the same original clustering, ??? allows overwritting of previous clusters
-    
-    So there's a situation where the gap range contains a different amino acid that itself has a different gap range, with a much higher score. 
-    Maybe do larger first?
-    No, do network to find ranges for allxall search. 
-    If a new member of an rbh cluster has a large unassigned range, check if has higher rbh t o sequence?
-    '''
-    clusters_filt = list(clustid_to_clust.values())
-    print("TESTING OUT CLUSTERS_FILT")
-    for x in clusters_filt:
-        print("preassignment clusters_filt", x)
-    # extra arguments?
-    new_clusters = []
-  
-    newer_rbhs = []
-    for gap in unassigned:
-        newer_clusters, newer_rbh = address_unassigned(gap, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust,  I2,  minscore = minscore, ignore_betweenness = ignore_betweenness, betweenness_cutoff = betweenness_cutoff, minclustsize = minclustsize, apply_walktrap = True)
-
-        new_clusters  = new_clusters + newer_clusters
-        newer_rbhs = newer_rbhs + newer_rbh
-
-    unique_rbhs = [list(x) for x in set(tuple(x) for x in newer_rbhs)]
-
-    G2 = graph_from_rbh(unique_rbhs)
-    new_clusters_list = dedup_clusters(new_clusters, G2, minclustsize)
-
-    # Going to do an additional step
-    # If a cluster has doubles
-    # See if there is overlap with another cluster
-    # See if removing the overlap amino acids resolves the doubles
-    #
-    too_small = []
-    new_clusters = []
-    for clust in new_clusters_list:
-          if len(clust) >= minclustsize:
-                new_clusters.append(clust)
-          else:
-             # This is neever happening?
-             if len(clust) > 1:
-                too_small.append(clust)
-
-
-
-    # Remove small clusters
-    #new_clusters = [x for x in clusters_list if len(x) >= minclustsize]
-
-    for x in new_clusters:
-        print("All new clusters", x)
-
-    #print("New clusters:", new_clusters)
-    # Very important to removeSublist here
-    new_clusters = removeSublist(new_clusters)
-    # Need to remove overlaps from clusters
-    # Get amino acids in more than one cluster, remove them. 
-
-    #print("New clusters after sublist removal",  new_clusters) 
-    aa_counter = {}
-    new_clusters_flat  = flatten(new_clusters) 
-    #print("flat_clusters", new_clusters_flat)
-    aa_counts = Counter(new_clusters_flat)
-    dupped_aas = {key for key, val in aa_counts.items() if val != 1}
-    print("dupped aas", dupped_aas)
-
-    # From doubled aas from clusters list of lists
-    new_clusters = [[aa for aa in clust if aa not in dupped_aas] for clust in new_clusters]
-        
-
-    # If this makes clusters too small remove them
- 
-    new_clusters = [clust for clust in new_clusters if len(clust) >= minclustsize]
-
-    print("WHAT is minclustsize", minclustsize)
-    for x in new_clusters:
-        print("All new new clusters", x)
-
-    #print("New clusters after overlap removal",  new_clusters) 
-    # Due to additional walktrap, there's always a change that a new cluster won't be entirely consistent with previous clusters. 
-    # In this section, remove any members of a new cluster that would bridge between previous clusters and cause over collapse
-    #print(pos_to_clustid)
-    new_clusters_filt = []
-    for clust in new_clusters:
-         clustids = []
-         posids = []
-         new_additions = []
-         for pos in clust:      
-            #print(pos)
-            if pos in pos_to_clustid.keys():
-               clustid = pos_to_clustid[pos]
-               clustids.append(clustid)
-               posids.append(pos)
-               print(pos, clustid)
-            else:
-                # Position wasn't previously clustered
-                print("new_additions", clust,pos)
-                new_additions.append(pos)
-         #print("posids", posids)                  
-         if len(list(set(clustids))) > 1:
-            #print("new cluster contains component of multiple previous clusters. Keeping largest matched cluster")
-            clustcounts = Counter(clustids)
-            largest_clust = max(clustcounts, key=clustcounts.get)   
-            sel_pos = [posids[x] for x in range(len(posids)) if clustids[x] == largest_clust]
-            #print("Split cluster catch", clustcounts, largest_clust, posids, clustids, sel_pos)
-            new_clust = sel_pos + new_additions
-                
-         else:
-            new_clusters_filt.append(clust)             
-
-    # T0o much merging happening
-    # See s4-0-I, s4-1-L in cluster 19 of 0-60 ribo
-
-    new_clusters_filt = removeSublist(new_clusters_filt)
-
-    clusters_new = remove_overlap_with_old_clusters(new_clusters_filt, clusters_filt)
-    clusters_merged = clusters_new + clusters_filt
-
-    for x in clusters_merged:
-       print("clusters_merged", x)
-    cluster_order, clustid_to_clust, pos_to_clustid, alignment = organize_clusters(clusters_merged, seqs_aas, minclustsize)
-    return(cluster_order, clustid_to_clust, pos_to_clustid, alignment, too_small)
-
-
 
 
 def fill_in_hopeless2(unassigned,  seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, index, hidden_states):
@@ -3298,7 +3208,7 @@ def get_align_args():
     parser.add_argument("-hd", "--heads", dest = "heads", type = str,
                         help="File will one head identifier per line, format layer1_head3")
 
-    parser.add_argument("-st", "--seqsimthresh", dest = "seqsimthresh",  type = float, required = False, default = 0.75,
+    parser.add_argument("-st", "--seqsimthresh", dest = "seqsimthresh",  type = float, required = False, default = 0,
                         help="Similarity threshold for clustering sequences")
 
 
@@ -3640,6 +3550,9 @@ def consolidate_w_clustering(clusters_dict, seqs_aas_dict):
     return(0) 
 
 
+
+
+
 #def squish_clusters(cluster_order, clustid_to_clust, index,hidden_states, full_cov_numseq, index_to_aa):
 #    
 #    '''
@@ -3954,5 +3867,129 @@ def consolidate_w_clustering(clusters_dict, seqs_aas_dict):
 #
 #    return(cluster_order2, clustid_to_clust)
 #
+##
 #
+#def fill_in_unassigned_w_clustering_old(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, I2,  minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.3, apply_walktrap = True ):        
+#    '''
+#    Run the same original clustering, ??? allows overwritting of previous clusters
+#    
+#    So there's a situation where the gap range contains a different amino acid that itself has a different gap range, with a much higher score. 
+#    Maybe do larger first?
+#    No, do network to find ranges for allxall search. 
+#    If a new member of an rbh cluster has a large unassigned range, check if has higher rbh t o sequence?
+#    '''
+#    clusters_filt = list(clustid_to_clust.values())
+#    print("TESTING OUT CLUSTERS_FILT")
+#    for x in clusters_filt:
+#        print("preassignment clusters_filt", x)
+#    # extra arguments?
+#    new_clusters = []
+#  
+#    newer_rbhs = []
+#    for gap in unassigned:
+#        newer_clusters, newer_rbh = address_unassigned(gap, seqs_aas, pos_to_clustid, cluster_order, clustid_to_clust,  I2,  minscore = minscore, ignore_betweenness = ignore_betweenness, betweenness_cutoff = betweenness_cutoff, minclustsize = minclustsize, apply_walktrap = apply_walktrap)
+#
+#        new_clusters  = new_clusters + newer_clusters
+#        newer_rbhs = newer_rbhs + newer_rbh
+#
+#    unique_rbhs = [list(x) for x in set(tuple(x) for x in newer_rbhs)]
+#
+#    G2 = graph_from_rbh(unique_rbhs)
+#    new_clusters_list = dedup_clusters(new_clusters, G2, minclustsize)
+#
+#    # Going to do an additional step
+#    # If a cluster has doubles
+#    # See if there is overlap with another cluster
+#    # See if removing the overlap amino acids resolves the doubles
+#    #
+#    too_small = []
+#    new_clusters = []
+#    for clust in new_clusters_list:
+#          if len(clust) >= minclustsize:
+#                new_clusters.append(clust)
+#          else:
+#             # This is neever happening?
+#             if len(clust) > 1:
+#                too_small.append(clust)
+#
+#
+#
+#    # Remove small clusters
+#    #new_clusters = [x for x in clusters_list if len(x) >= minclustsize]
+#
+#    for x in new_clusters:
+#        print("All new clusters", x)
+#
+#    #print("New clusters:", new_clusters)
+#    # Very important to removeSublist here
+#    new_clusters = removeSublist(new_clusters)
+#    # Need to remove overlaps from clusters
+#    # Get amino acids in more than one cluster, remove them. 
+#
+#    #print("New clusters after sublist removal",  new_clusters) 
+#    aa_counter = {}
+#    new_clusters_flat  = flatten(new_clusters) 
+#    #print("flat_clusters", new_clusters_flat)
+#    aa_counts = Counter(new_clusters_flat)
+#    dupped_aas = {key for key, val in aa_counts.items() if val != 1}
+#    print("dupped aas", dupped_aas)
+#
+#    # From doubled aas from clusters list of lists
+#    new_clusters = [[aa for aa in clust if aa not in dupped_aas] for clust in new_clusters]
+#        
+#
+#    # If this makes clusters too small remove them
+# 
+#    new_clusters = [clust for clust in new_clusters if len(clust) >= minclustsize]
+#
+#    print("WHAT is minclustsize", minclustsize)
+#    for x in new_clusters:
+#        print("All new new clusters", x)
+#
+#    #print("New clusters after overlap removal",  new_clusters) 
+#    # Due to additional walktrap, there's always a change that a new cluster won't be entirely consistent with previous clusters. 
+#    # In this section, remove any members of a new cluster that would bridge between previous clusters and cause over collapse
+#    #print(pos_to_clustid)
+#    new_clusters_filt = []
+#    for clust in new_clusters:
+#         clustids = []
+#         posids = []
+#         new_additions = []
+#         for pos in clust:      
+#            #print(pos)
+#            if pos in pos_to_clustid.keys():
+#               clustid = pos_to_clustid[pos]
+#               clustids.append(clustid)
+#               posids.append(pos)
+#               print(pos, clustid)
+#            else:
+#                # Position wasn't previously clustered
+#                print("new_additions", clust,pos)
+#                new_additions.append(pos)
+#         #print("posids", posids)                  
+#         if len(list(set(clustids))) > 1:
+#            #print("new cluster contains component of multiple previous clusters. Keeping largest matched cluster")
+#            clustcounts = Counter(clustids)
+#            largest_clust = max(clustcounts, key=clustcounts.get)   
+#            sel_pos = [posids[x] for x in range(len(posids)) if clustids[x] == largest_clust]
+#            #print("Split cluster catch", clustcounts, largest_clust, posids, clustids, sel_pos)
+#            new_clust = sel_pos + new_additions
+#                
+#         else:
+#            new_clusters_filt.append(clust)             
+#
+#    # T0o much merging happening
+#    # See s4-0-I, s4-1-L in cluster 19 of 0-60 ribo
+#
+#    new_clusters_filt = removeSublist(new_clusters_filt)
+#
+#    clusters_new = remove_overlap_with_old_clusters(new_clusters_filt, clusters_filt)
+#    clusters_merged = clusters_new + clusters_filt
+#
+#    for x in clusters_merged:
+#       print("clusters_merged", x)
+#    cluster_order, clustid_to_clust, pos_to_clustid, alignment = organize_clusters(clusters_merged, seqs_aas, minclustsize)
+#    return(cluster_order, clustid_to_clust, pos_to_clustid, alignment, too_small)
+
+
 
