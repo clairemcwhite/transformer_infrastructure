@@ -1,3 +1,4 @@
+fasta=$1
 while read line
 do
     if [[ ${line:0:1} == '>' ]]
@@ -10,4 +11,4 @@ do
     else
         echo $line >> "$outfile"
     fi
-done < best1_human.fasta
+done < $f
