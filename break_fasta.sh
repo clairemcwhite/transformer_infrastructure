@@ -11,4 +11,4 @@ do
     else
         echo $line >> "$outfile"
     fi
-done < $f
+done < $fasta
