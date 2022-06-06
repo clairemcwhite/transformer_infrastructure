@@ -26,6 +26,7 @@ import numpy as np
 from statistics import NormalDist
 from scipy.stats import entropy
 from scipy.sparse import diags
+from scipy.spatial.distance import euclidean
 import random
 from transformer_infrastructure.hf_utils import build_index_flat, build_index_voronoi
 from transformer_infrastructure.run_tests import run_tests
@@ -49,6 +50,8 @@ import sys
 import igraph
 from pandas.core.common import flatten 
 import pandas as pd 
+
+from numba import njit
 
 from collections import Counter
 import matplotlib.pyplot as plt
@@ -392,9 +395,33 @@ def kl_gauss(m1, m2, s1, s2):
     kl = np.log(s2/s1) + (s1**2 + (m1-m2)**2)/(2*s2**2) - 1/2
     return(kl)
 
+
+
 def get_ovl(m1, m2, s1, s2):
    ovl = NormalDist(mu=m1, sigma=s1).overlap(NormalDist(mu=m2, sigma=s2)) 
    return(ovl)
+
+def get_w2(m1, m2, s1, s2):
+ 
+    w2 = np.sqrt((m1 - m2)**2 + (s1 - s2)**2)
+    return(w2) 
+
+@njit
+def numba_w2(m1, m2, s1, s2, w2):
+
+    for i in range(m1.shape[0]):
+         
+        w2[int(i)] = np.sqrt((m1[i] - m2[i])**2 + (s1[i] - s2[i])**2)
+ 
+    return w2
+
+@njit
+def numba_overlap(m1, m2, s1, s2, o):
+    for i in range(m1.shape[0]):
+          o[int(i)] = NormalDist(mu=m1[i], sigma=s1[i]).overlap(NormalDist(mu=m2[i], sigma=s2[i])) 
+    return(o) 
+    
+
 if __name__ == '__main__':
     true_start = time()
     args = get_seqsim_args()
@@ -526,8 +553,9 @@ if __name__ == '__main__':
     print("Vectors retrieved from index in ", amount)
     vec_kl_gauss = np.vectorize(kl_gauss)
     vec_get_ovl = np.vectorize(get_ovl)
+    vec_get_w2 = np.vectorize(get_w2)
     with open(outfile, "w") as o:
-        o.write("source,target,score,overlap,kl\n")
+        o.write("source,target,score,overlap,kl,w2_mean,w2_vec,euc_mean,euc_sigma\n")
         for edge in G.es():
            e_start = time()
            #print(edge)
@@ -561,14 +589,14 @@ if __name__ == '__main__':
            # Do overlaps of each row
            #arr =np.array([source_mean, target_mean, source_sigma, target_sigma])
            #print(arr)
-           o_start = time()
+           #o_start = time()
 
            # This is too slow
            #overlaps = [NormalDist(mu=m1, sigma=s1).overlap(NormalDist(mu=m2, sigma=s2)) for m1, m2, s1, s2 in zip(source_mean, target_mean, source_sigma, target_sigma)]
  
            #mean_overlap = np.mean(overlaps)
            #o_end = time()
-           o_span = time() - o_start
+           #o_span = time() - o_start
            #print(overlaps[0:5])
            #overlaps = NormalDist(mu=source_mean, sigma=source_sigma).overlap(NormalDist(mu=target_mean, sigma=target_sigma))
 
@@ -594,6 +622,7 @@ if __name__ == '__main__':
            #kls = [kl_gauss(m1, s1, m2, s2) for  m1, m2, s1, s2 in zip(source_mean, target_mean, source_sigma, target_sigma)]    
            ovls = vec_get_ovl(source_mean, target_mean, source_sigma, target_sigma)
            ovl = np.mean(ovls)
+           k_span = time() - k_start
            #x = np.random.normal(source_mean, source_sigma)
            #y = np.random.normal(target_mean, target_sigma)
            #x = np.random.default_rng().multivariate_normal(source_mean, source_cov, method = "cholesky", size = 1)
@@ -609,12 +638,35 @@ if __name__ == '__main__':
            #kl_out = kl_mvn(source_mean, source_cov, target_mean, target_cov)
            #rv = multivariate_normal([mu_x, mu_y], [[sigma_x, 0], [0, sigma_y]])
 
-           k_span = time() - k_start
+           w2_start = time()
+           w2s = vec_get_w2(source_mean, target_mean, source_sigma, target_sigma)
 
+           print("source_mean",source_mean)
+           print("target_mean", target_mean)
+           print("source_sigma",source_sigma)
+           print("target_sigma", target_sigma)
+           print("maxes", max(source_mean), max(target_mean), max(source_sigma), max(target_sigma))
+           print("w2s", w2s)
+           w2_out = 1 - np.mean(w2s)
+           w2_span = time() - w2_start
+
+           w2_vect_start = time()
+           w2_vect = 1 - (np.sqrt(euclidean(source_mean, target_mean)**2 + euclidean(source_sigma, target_sigma)**2))/len(source_mean)
+           w2_vect_span = time() - w2_vect_start
+           e_span = time() - e_start
+
+           nb_w2_vect_start = time()
+           nb_w2_vect = np.empty(source_mean.shape[0] , dtype=np.float32)
+           print(nb_w2_vect)
+           nb_w2_vect = numba_w2(source_mean, target_mean,source_sigma, target_sigma, nb_w2_vect)
+           nb_w2_vect_span = time() - nb_w2_vect_start
            e_span = time() - e_start
 
 
-           #print( "ovl", ovl, "kl", kl_out,  "edge weight", edge['weight'],  "total_time", e_span,  "dict_time", d_span, "overlap_time", o_span, "vec_overlap time", k_span, "kl_time", m_span)
+           euc_mean = euclidean(source_mean, target_mean)
+           euc_sigma = euclidean(source_sigma, target_sigma)
+
+           print( "ovl", ovl, "kl", kl_out, "avg_w2", w2_out, "nb_avg_w2", nb_w2_vect, "w2_vect", w2_vect,  "cossim", edge['weight'],  "total_time", e_span,  "dict_time", d_span,  "vec_overlap time", k_span, "kl_time", m_span, "w2_time", w2_span, "w2_v_time", w2_vect_span, "nb_w2_time", nb_w2_vect_span)
            
 
 
@@ -623,7 +675,7 @@ if __name__ == '__main__':
                 if weight < 0.99:
                       print("Warning, score for {} and {} should be close to 1, but is {}. check indices".format(source, target, weight))
                 continue
-           o.write("{},{},{:.5f},{:.5f},{:.5f}\n".format(source, target, weight, ovl, kl_out))   
+           o.write("{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.10f},{},{},{}\n".format(source, target, weight, ovl, kl_out, w2_out, w2_vect, euc_mean, euc_sigma, nb_w2_vect))   
     print("outfile made", time() - true_start)
   
     # Step 2: A this point take everything about mean similarity threshold and do distribution comparison

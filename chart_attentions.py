@@ -6,10 +6,10 @@ import time
 import torch
 from Bio.Data import SCOPData
 from Bio.PDB import PDBParser, PPBuilder
-from tape import TAPETokenizer, ProteinBertModel
+#from tape import TAPETokenizer, ProteinBertModel
 from chimerax.core.commands import run
 from transformers import AutoModel, AutoTokenizer
-from attn_scripts.attn_calc import get_attn_data, parse_mut
+from attn_calc import get_attn_data, parse_mut
 
 
 # When running through ChimeraX, put whole python command + args in quotes
