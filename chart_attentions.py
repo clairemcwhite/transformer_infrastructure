@@ -9,7 +9,7 @@ from Bio.PDB import PDBParser, PPBuilder
 #from tape import TAPETokenizer, ProteinBertModel
 from chimerax.core.commands import run
 from transformers import AutoModel, AutoTokenizer
-from attn_calc import get_attn_data, parse_mut
+from transformer_infrastructure.attn_calc import get_attn_data, parse_mut
 
 
 # When running through ChimeraX, put whole python command + args in quotes
