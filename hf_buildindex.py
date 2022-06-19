@@ -76,7 +76,7 @@ def get_index_args():
 
     parser.add_argument("-t", "--truncate", dest = "truncate",  type = int, required = False, default = 12000,
                         help="Default 12000. (23000 is too long)")
-    parser.add_argument("-s", "--scoretype", dest = "scoretype",  type = str, required = False, default = "cosinesim", choices = ["cosinesim", "euclidean"],
+    parser.add_argument("-s", "--scoretype", dest = "scoretype",  type = str, required = False, default = "euclidean", choices = ["cosinesim", "euclidean"],
                         help="How to calculate initial sequence similarity score") 
 
     args = parser.parse_args()
@@ -101,7 +101,7 @@ if __name__ == '__main__':
     scoretype = args.scoretype
     # Keep to demonstrate effect of clustering or not
  
-
+    faiss.omp_set_num_threads(10)
     if heads is not None:
        with open(heads, "r") as f:
          headnames = f.readlines()
@@ -152,12 +152,18 @@ if __name__ == '__main__':
                                         padding = padding,
                                         heads = headnames, 
                                         strat = strat)
-                mean_embeddings = np.array(embedding_dict['sequence_embeddings']).astype(np.float32) 
-                mean_index = build_index_flat(mean_embeddings, index = mean_index, scoretype = scoretype)
+                mean_embeddings = np.array(embedding_dict['sequence_embeddings']).astype(np.float32)
+                if scoretype == "euclidean": 
+                    mean_index = build_index_flat(mean_embeddings, index = mean_index, scoretype = scoretype, normalize_l2 = False, return_norm = False)
+                else:
+                    mean_index, norm = build_index_flat(mean_embeddings, index = mean_index, scoretype = scoretype, normalize_l2 = True, return_norm = True)
+
                 faiss.write_index(mean_index, mean_outfile)
                 if strat == "meansig":
                     sigma_embeddings = np.array(embedding_dict['sequence_embeddings_sigma']).astype(np.float32) 
-                    sigma_index = build_index_flat(sigma_embeddings, index = sigma_index)
+                    # Scale sigmas by same amount as the mean
+                    sigma_embeddings = sigma_embeddings 
+                    sigma_index = build_index_flat(sigma_embeddings, index = sigma_index, scoretype = "euclidean", normalize_l2 = False, return_norm = False)
                     faiss.write_index(sigma_index, sigma_outfile)
 
                 # print("{} added to index".format(fasta_path))

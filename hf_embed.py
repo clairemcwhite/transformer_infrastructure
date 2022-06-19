@@ -1,4 +1,6 @@
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, T5Tokenizer, T5EncoderModel
+
+
 from transformer_infrastructure.pca_embeddings import control_pca, load_pcamatrix, apply_pca
 import torch
 import torch.nn as nn
@@ -315,11 +317,17 @@ def load_model(model_path):
     Returns the model and the tokenizer
     '''
     print("load tokenizer")
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-
-    print("load model")
-    model = AutoModel.from_pretrained(model_path, output_hidden_states=True)
-
+    print("load_model:model_path", model_path)
+    if "bert" in model_path:
+        print("Bert model")
+        print("load model")
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model = AutoModel.from_pretrained(model_path, output_hidden_states=True)
+    if "t5" in model_path:
+        print("T5 model")
+        tokenizer = T5Tokenizer.from_pretrained(model_path)
+        model = T5EncoderModel.from_pretrained(model_path, output_hidden_states=True)
+        #model.half() # Put model in half precision mode for faster embedding
     return(model, tokenizer)
 
 # ? 

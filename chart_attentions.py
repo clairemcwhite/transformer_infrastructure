@@ -150,7 +150,7 @@ def main_func():
     # Calculate attentions 
     attns = get_attn_data(model, tokenizer, tokens, min_attn  = min_attn)
     
-  
+     
 
     num_layers = len(attns)
     num_heads = len(attns[0])

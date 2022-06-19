@@ -89,8 +89,8 @@ def kl_mvn(m0, S0, m1, S1):
     #print(tr_term,det_term,quad_term)
     return .5 * (tr_term + det_term + quad_term - N) 
 
-def graph_from_distindex(index, dist, seqsim_thresh = 0, scoretype = "cosinesim"):  
-    print("Create graph from dist index with threshold {}".format(seqsim_thresh))
+def graph_from_distindex(index, dist):  
+    #print("Create graph from dist index with threshold {}".format(seqsim_thresh))
     edges = []
     weights = []
     complete = []
@@ -107,19 +107,19 @@ def graph_from_distindex(index, dist, seqsim_thresh = 0, scoretype = "cosinesim"
           edge = (i, index[i, j])
           #if edge not in order_edges:
           # Break up highly connected networks, simplify clustering
-          if scoretype == "cosinesim":
-              if weight >= seqsim_thresh:
-                  edges.append(edge)
-                  weights.append(weight)
-          if scoretype == "euclidean":
-              if weight <= seqsim_thresh:
-                  edges.append(edge)
-                  weights.append(weight)
+          #if scoretype == "cosinesim":
+              #if weight >= seqsim_thresh:
+          edges.append(edge)
+          weights.append(weight)
+          #if scoretype == "euclidean":
+          #    if weight <= seqsim_thresh:
+          #        edges.append(edge)
+          #        weights.append(weight)
 
-    print("edge preview", edges[0:10])
+    print("edge preview", edges[0:15])
     G = igraph.Graph.TupleList(edges=edges, directed=True) # Prevent target from being placed first in edges
     G.es['weight'] = weights
-    G = G.simplify(combine_edges = "first")  # symmetrical, doesn't matter
+    #G = G.simplify(combine_edges = "first")  # symmetrical, doesn't matter
 
     return(G)
 
@@ -184,8 +184,8 @@ def get_seq_groups2(seqs, seq_names, embedding_dict, logging, exclude, do_cluste
     #    logging.info("Removing {} characters of neutral padding X".format(padding))
     #    hstates_list = hstates_list[:,padding:-padding,:]
 
-    padded_seqlen = embedding_dict['aa_embeddings'].shape[1]
-    logging.info("Padded sequence length: {}".format(padded_seqlen))
+    #padded_seqlen = embedding_dict['aa_embeddings'].shape[1]
+    #logging.info("Padded sequence length: {}".format(padded_seqlen))
 
 
     k_select = numseqs 
@@ -284,16 +284,18 @@ def seq_index_search(sentence_array, k_select, s_index = None):
 
     #print("sentence_array", sentence_array)
     if not s_index:
-        s_index = build_index_flat(sentence_array, dist = "cosinesim")
+        s_index = build_index_flat(sentence_array, scoretype = "cosinesim")
 
-    faiss.normalize_L2(sentence_array)
+    #sentence_array, norm = normalize(sentence_array, norm='l2', axis=0, copy=True, return_norm=True)
+    #faiss.normalize_L2(sentence_array)
+
     s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
     return(s_distance, s_index2)
 
 def get_seqsims(seqs, embedding_dict, seqsim_thresh = 0.75, k = None, s_index = None, s_sigma_index = None, scoretype = "cosinesim"):
     numseqs = len(seqs)
 
-    print("seqsim_thresh", seqsim_thresh)
+    #print("seqsim_thresh", seqsim_thresh)
     print("k", k)
     #padded_seqlen = embedding_dict['aa_embeddings'].shape[1]
     #logging.info("Padded sequence length: {}".format(padded_seqlen))
@@ -317,18 +319,19 @@ def get_seqsims(seqs, embedding_dict, seqsim_thresh = 0.75, k = None, s_index = 
 
     print("Searching index")
     s_distance, s_index2 = seq_index_search(sentence_array, k_select, s_index)
+    
     #s_distance = (2-s_distance)/2
 
     end_time = time()
     print("Index searched for {} sequences in {} seconds".format(numseqs, end_time - start_time))
     #if s_sigma_index:
-    print("get_seqsims:s_index2:",s_index2) 
+    #print("get_seqsims:s_index2:",s_index2) 
         
 
     
     #else:
     start_time = time()
-    G = graph_from_distindex(s_index2, s_distance, seqsim_thresh, scoretype)
+    G = graph_from_distindex(s_index2, s_distance)
     end_time = time()
     print("Index converted to edges in {} seconds".format(end_time - start_time))
     return(G)
@@ -416,7 +419,7 @@ def numba_w2(m1, m2, s1, s2, w2):
     return w2
 
 @njit
-def numba_overlap(m1, m2, s1, s2, o):
+def numba_ovl(m1, m2, s1, s2, o):
     for i in range(m1.shape[0]):
           o[int(i)] = NormalDist(mu=m1[i], sigma=s1[i]).overlap(NormalDist(mu=m2[i], sigma=s2[i])) 
     return(o) 
@@ -541,27 +544,36 @@ if __name__ == '__main__':
     print("#_vertices", len(G.vs()))
     print("query_names", len(seq_names))
     print("index_names", len(index_names))
-    complete = []
-    # Need to do this as a batch, not repeatedly
-    named_vertex_list = G.vs()["name"]
 
+
+    named_vertex_list = G.vs()["name"]
+    print(named_vertex_list)
     retrieve_start_time = time()
-    vertex_mean_dict =  dict([(x, s_index.reconstruct(int(x))) for x in named_vertex_list])     
-    vertex_sigma_dict = dict([(x, s_sigma_index.reconstruct(int(x))) for x in named_vertex_list])     
+    target_mean_dict =  dict([(x, s_index.reconstruct(int(x))) for x in named_vertex_list])     
+    target_sigma_dict = dict([(x, s_sigma_index.reconstruct(int(x))) for x in named_vertex_list])     
     retrieve_end_time = time()
     amount = retrieve_end_time - retrieve_start_time
     print("Vectors retrieved from index in ", amount)
     vec_kl_gauss = np.vectorize(kl_gauss)
     vec_get_ovl = np.vectorize(get_ovl)
     vec_get_w2 = np.vectorize(get_w2)
+    sentence_array =  embedding_dict['sequence_embeddings'] 
+    #faiss.normalize_L2(sentence_array)
+    sigma_array = embedding_dict['sequence_embeddings_sigma']
+    #faiss.normalize_L2(sigma_array)
+    #sentence_array_l2norm = normalize(sentence_array, norm='l2', axis=1, copy=True)
+
+
     with open(outfile, "w") as o:
-        o.write("source,target,score,overlap,kl,w2_mean,w2_vec,euc_mean,euc_sigma\n")
+        #o.write("source,target,score,overlap,kl,w2_mean,w2_vec,euc_mean,euc_sigma\n")
+        o.write("source,target,distance,cosinesim,w2_mean\n")
+        e_start = time()
         for edge in G.es():
-           e_start = time()
            #print(edge)
            #print(G.vs()[edge.source], G.vs()[edge.target], edge['weight'])
            source_idx = int(G.vs()[edge.source]['name'])
            target_idx = int(G.vs()[edge.target]['name'])
+           #print(source_idx, target_idx)
            if source_idx == -1:
                continue
            if target_idx == -1:
@@ -571,13 +583,21 @@ if __name__ == '__main__':
            weight = edge['weight']
           
            d_start = time()
-           source_mean = vertex_mean_dict[source_idx]
-           source_sigma = vertex_sigma_dict[source_idx]
-           target_mean = vertex_mean_dict[target_idx]
-           target_sigma = vertex_sigma_dict[target_idx]
+           source_mean = sentence_array[source_idx]
+           source_sigma =  sigma_array[source_idx]
+           #print(source_mean)
+           #source_mean = vertex_mean_dict[source_idx]
+           #source_sigma = vertex_sigma_dict[source_idx]
+           target_mean = target_mean_dict[target_idx]
+           #print(target_mean)
+           target_sigma = target_sigma_dict[target_idx]
            #d_end = time()
            d_span = time()  -d_start
 
+           cosinesim = cosine_similarity([source_mean], [target_mean]) 
+           #print(cosinesim)
+           #print(cosinesim[0][0])
+           cosinesim = cosinesim[0][0]
            ##source_mean  =  s_index.reconstruct(source_idx)
            #source_sigma  =  s_sigma_index.reconstruct(source_idx)
            #target_mean  =  s_index.reconstruct(target_idx)
@@ -600,12 +620,12 @@ if __name__ == '__main__':
            #print(overlaps[0:5])
            #overlaps = NormalDist(mu=source_mean, sigma=source_sigma).overlap(NormalDist(mu=target_mean, sigma=target_sigma))
 
-           m_start = time()
+           ###m_start = time()
 
            #print("start kl")
-           kls = vec_kl_gauss(source_mean, target_mean, source_sigma, target_sigma)
+           ###kls = vec_kl_gauss(source_mean, target_mean, source_sigma, target_sigma)
            #print(kls)
-           kl_out = 1- np.mean(kls)       
+           ###kl_out = 1- np.mean(kls)       
   
            #kl = kl_mvn(source_mean, source_sigma, target_mean, target_sigma)
            #dim = len(source_mean)
@@ -617,12 +637,12 @@ if __name__ == '__main__':
            #np.fill_diagonal(target_cov, target_sigma) # This is inplace
 
            #np.random.seed(10)
-           m_span = time() - m_start
-           k_start = time()
+           ###m_span = time() - m_start
+          ### k_start = time()
            #kls = [kl_gauss(m1, s1, m2, s2) for  m1, m2, s1, s2 in zip(source_mean, target_mean, source_sigma, target_sigma)]    
-           ovls = vec_get_ovl(source_mean, target_mean, source_sigma, target_sigma)
-           ovl = np.mean(ovls)
-           k_span = time() - k_start
+           ###ovls = vec_get_ovl(source_mean, target_mean, source_sigma, target_sigma)
+          ### ovl = np.mean(ovls)
+           ###k_span = time() - k_start
            #x = np.random.normal(source_mean, source_sigma)
            #y = np.random.normal(target_mean, target_sigma)
            #x = np.random.default_rng().multivariate_normal(source_mean, source_cov, method = "cholesky", size = 1)
@@ -638,44 +658,52 @@ if __name__ == '__main__':
            #kl_out = kl_mvn(source_mean, source_cov, target_mean, target_cov)
            #rv = multivariate_normal([mu_x, mu_y], [[sigma_x, 0], [0, sigma_y]])
 
-           w2_start = time()
-           w2s = vec_get_w2(source_mean, target_mean, source_sigma, target_sigma)
+           ##w2_start = time()
+           ##w2s = vec_get_w2(source_mean, target_mean, source_sigma, target_sigma)
 
-           print("source_mean",source_mean)
-           print("target_mean", target_mean)
-           print("source_sigma",source_sigma)
-           print("target_sigma", target_sigma)
-           print("maxes", max(source_mean), max(target_mean), max(source_sigma), max(target_sigma))
-           print("w2s", w2s)
-           w2_out = 1 - np.mean(w2s)
-           w2_span = time() - w2_start
+           #print("source_mean",source_mean)
+           #print("target_mean", target_mean)
+           #print("source_sigma",source_sigma)
+           #print("target_sigma", target_sigma)
+           #print("maxes", max(source_mean), max(target_mean), max(source_sigma), max(target_sigma))
+           #print("w2s", w2s)
+           ##w2_out = 1 - np.mean(w2s)
+           ##w2_span = time() - w2_start
 
-           w2_vect_start = time()
-           w2_vect = 1 - (np.sqrt(euclidean(source_mean, target_mean)**2 + euclidean(source_sigma, target_sigma)**2))/len(source_mean)
-           w2_vect_span = time() - w2_vect_start
-           e_span = time() - e_start
+           ##w2_vect_start = time()
+           ##w2_vect = 1 - (np.sqrt(euclidean(source_mean, target_mean)**2 + euclidean(source_sigma, target_sigma)**2))/len(source_mean)
+           ##w2_vect_span = time() - w2_vect_start
+           #e_span = time() - e_start
 
            nb_w2_vect_start = time()
            nb_w2_vect = np.empty(source_mean.shape[0] , dtype=np.float32)
-           print(nb_w2_vect)
+           #print(nb_w2_vect)
            nb_w2_vect = numba_w2(source_mean, target_mean,source_sigma, target_sigma, nb_w2_vect)
            nb_w2_vect_span = time() - nb_w2_vect_start
-           e_span = time() - e_start
+           w2_out = 1 - np.mean(nb_w2_vect)
 
 
-           euc_mean = euclidean(source_mean, target_mean)
-           euc_sigma = euclidean(source_sigma, target_sigma)
+           #nb_o_vect_start = time()
+           #nb_o_vect = np.empty(source_mean.shape[0] , dtype=np.float32)
+           #print(nb_o_vect)
+           #nb_o_vect = numba_ovl(source_mean, target_mean,source_sigma, target_sigma, nb_o_vect)
+           #nb_o_vect_span = time() - nb_o_vect_start
 
-           print( "ovl", ovl, "kl", kl_out, "avg_w2", w2_out, "nb_avg_w2", nb_w2_vect, "w2_vect", w2_vect,  "cossim", edge['weight'],  "total_time", e_span,  "dict_time", d_span,  "vec_overlap time", k_span, "kl_time", m_span, "w2_time", w2_span, "w2_v_time", w2_vect_span, "nb_w2_time", nb_w2_vect_span)
+
+           ##euc_mean = euclidean(source_mean, target_mean)
+           ##euc_sigma = euclidean(source_sigma, target_sigma)
+
+           #print( "ovl", ovl, "kl", kl_out, "avg_w2", w2_out, "nb_avg_w2", nb_w2_vect, "w2_vect", w2_vect,  "cossim", edge['weight'],  "total_time", e_span,  "dict_time", d_span,  "vec_overlap time", k_span, "kl_time", m_span, "w2_time", w2_span, "w2_v_time", w2_vect_span, "nb_w2_time", nb_w2_vect_span)
            
-
-
 
            if source == target:
                 if weight < 0.99:
                       print("Warning, score for {} and {} should be close to 1, but is {}. check indices".format(source, target, weight))
-                continue
-           o.write("{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.10f},{},{},{}\n".format(source, target, weight, ovl, kl_out, w2_out, w2_vect, euc_mean, euc_sigma, nb_w2_vect))   
+                #continue
+           #o.write("{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.10f},{},{},{}\n".format(source, target, weight, ovl, kl_out, w2_out, w2_vect, euc_mean, euc_sigma, nb_w2_vect))   
+           o.write("{},{},{:.5f},{:.5f},{:.8f}\n".format(source,target,weight,cosinesim,w2_out))
+    e_span = time() - e_start
+    print("second similarty taken in {} seconds".format(e_span))
     print("outfile made", time() - true_start)
   
     # Step 2: A this point take everything about mean similarity threshold and do distribution comparison

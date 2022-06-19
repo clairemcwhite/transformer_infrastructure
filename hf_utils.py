@@ -4,6 +4,7 @@ import torch
 
 import faiss
 import numpy as np
+from sklearn.preprocessing import normalize
 
 def load_model(model_path):
     '''
@@ -94,21 +95,37 @@ def get_sequencelabel_tags(labels):
 
 
 ### Similarity
-def build_index_flat(hidden_states, scoretype = "cosinesim", index = None):
+def build_index_flat(hidden_states, scoretype = "cosinesim", index = None,  normalize_l2 = True, return_norm = False):
 
 
     if not index:
         d = hidden_states.shape[1]
         if scoretype == "euclidean":
            # Not working right, do tests before using
-           index = faiss.index_factory(d, "Flat", faiss.METRIC_L2)
-           faiss.normalize_L2(hidden_states)
+           #index = faiss.index_factory(d, "Flat", faiss.METRIC_L2)
+           index = faiss.index_factory(d, "Flat")
+           #index = faiss.IndexFlatL2(d)
         else:
             index = faiss.index_factory(d, "Flat", faiss.METRIC_INNER_PRODUCT)
 
-    faiss.normalize_L2(hidden_states)
+    if normalize_l2 == True:
+        #hidden_states, norm = normalize(hidden_states, norm='l2', axis=1, copy=True, return_norm=True)
+        #print(hidden_states.shape)
+        faiss.normalize_L2(hidden_states)
+        #xtsq = hidden_states ** 2
+        #print(np.sum(xtsq, axis = 1))
+        #print(np.sum(xtsq, axis = 1).shape) 
+        #xtsq_norm = hidden_states_norm ** 2
+        #print(np.sum(xtsq_norm, axis = 1))
+        #print(np.sum(xtsq_norm, axis = 1).shape) 
+
     index.add(hidden_states)
-    return(index)
+
+    if return_norm == True:
+       return(index, norm)
+
+    if return_norm == False:
+       return(index)
 
 def build_index_voronoi(hidden_states, seqlens):
 

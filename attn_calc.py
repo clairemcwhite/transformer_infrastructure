@@ -77,13 +77,17 @@ def get_attn_data(model, tokenizer, tokens, min_attn = 0.1, start_index=0, end_i
     #else:
     #    assert len(token_idxs) == len(tokens) + 2
 
+    print("get_inputs")    
     inputs = torch.tensor(token_idxs).unsqueeze(0)
     with torch.no_grad():
         attns = model(inputs)[-1]
         # Remove attention from <CLS> (first) and <SEP> (last) token
+    print("trim attns")
     attns = [attn[:, :, 1:-1, 1:-1] for attn in attns]
+    print("stack attns")
     attns = torch.stack([attn.squeeze(0) for attn in attns])
     attns = attns.tolist()
+    print("attentions calculated")
     return(attns)
 
 

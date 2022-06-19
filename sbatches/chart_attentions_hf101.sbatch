@@ -21,14 +21,14 @@ nvidia-smi
 
 python -m torch.utils.collect_env
 
-python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/scratch/gpfs/cmcwhite/attentionview_provis/attn_scripts/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1"
+python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/home/cmcwhite/transformer_infrastructure/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1"
 
-python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/scratch/gpfs/cmcwhite/attentionview_provis/attn_scripts/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C128S"
+python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/home/cmcwhite/transformer_infrastructure/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C128S"
 
-python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/scratch/gpfs/cmcwhite/attentionview_provis/attn_scripts/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C347S"
+python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/home/cmcwhite/transformer_infrastructure/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C347S"
 
-python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/scratch/gpfs/cmcwhite/attentionview_provis/attn_scripts/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C419S"
+python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/home/cmcwhite/transformer_infrastructure/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C419S"
 
-python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/scratch/gpfs/cmcwhite/attentionview_provis/attn_scripts/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C184S"
+python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/home/cmcwhite/transformer_infrastructure/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C184S"
 
-python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/scratch/gpfs/cmcwhite/attentionview_provis/attn_scripts/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C339S"
+python  /home/cmcwhite/Downloads/chimerax-1.3/lib/python3.9/site-packages/ChimeraX_main.py --nogui --script "/home/cmcwhite/transformer_infrastructure/chart_attentions.py  -st /scratch/gpfs/cmcwhite/attentionview_provis/AF-Q6STH5-F1-model_v2.pdb -mo /scratch/gpfs/cmcwhite/prot_bert_bfd -ma 0.1 -mu C339S"
