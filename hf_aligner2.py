@@ -1884,94 +1884,6 @@ def dag_to_cluster_order(cluster_orders, seqs_aas, pos_to_clust_dag, clustid_to_
 
 
 
-@profile
-def get_seq_groups2(seqs, seq_names, embedding_dict, logging, exclude, do_clustering, seqsim_thresh= 0.75):
-    numseqs = len(seqs)
-
-    
-    #hstates_list, sentence_embeddings = get_hidden_states(seqs, model, tokenizer, layers, return_sentence = True)
-    #logging.info("Hidden states complete")
-    #print("end hidden states")
-
-    #if padding:
-    #    logging.info("Removing {} characters of neutral padding X".format(padding))
-    #    hstates_list = hstates_list[:,padding:-padding,:]
-
-    to_exclude = []
-
-    G = get_seqsims(seqs, embedding_dict, seqsim_thresh = seqsim_thresh)
-
-    group_hstates_list = []
-    cluster_seqnums_list = []
-    cluster_names_list = []
-    cluster_seqs_list = []
-   
-
-    # TODO use two variable names for spaced and unspaced seqs
-    logging.info("Removing spaces from sequences")
-    #if padding:
-    #    seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
-    #else:
-    #    seqs = [x.replace(" ", "") for x in seqs]
-    #prev_to_exclude = []
-    if do_clustering == True:
-        #print("fastgreedy")
-        #print(G)
-    
-      #repeat = True
-      #
-      #while repeat == True:
-      d = sentence_array.shape[1]
-      for k in range(1, 20):
-         kmeans = faiss.Kmeans(d = d, k = k, niter = 20)
-         kmeans.train(sentence_array)
-    
-   
-         D, I = kmeans.index.search(sentence_array, 1) 
-         print("D", D)
-         print("I", I)
-         clusters = I.squeeze()
-         labels = list(zip(G.vs()['name'], clusters))
-         #for x in labels:
-         #    print("labels", x[0], x[1])
-
-
-         group_hstates_list = []
-         cluster_seqnums_list = []
-         cluster_names_list = []
-         cluster_seqs_list = []
- 
-         prev_to_exclude = to_exclude
-        
-         means = []
-         for clustid in list(set(clusters)):
-             print("eval clust", clustid)
-             clust_seqs = [x[0] for x in labels if x[1] == clustid] 
-             print("clust_seqs", clust_seqs)
-             #print("labels from loop", labels)
-             #for lab in labels:
-             #     print("labels", lab, lab[0], lab[1], clustid) 
-             #     if lab[1] == clustid:
-             # 
-              #         print("yes")
-             #print("GG", G.vs()['name'])
-             #print("GG", G.es()['weight'])
-             #edgelist = []
-             weightlist = []
-             for edge in G.es():
-                  #print(edge, edge['weight'])
-                  #print(G.vs[edge.target]["name"], G.vs[edge.source]["name"])
-                  if G.vs[edge.target]["name"] in clust_seqs:
-                       if G.vs[edge.source]["name"] in clust_seqs:
-                          weightlist.append(edge['weight'])
-                          print(G.vs[edge.target]["name"], G.vs[edge.source]["name"], edge['weight'])
-             print(weightlist)
-             print("clust {} mean {}".format(clustid, np.mean(weightlist)))
-             means.append(np.mean(weightlist))
-         print("k {} overall mean {}".format(clustid, np.mean(means)))    
-
-      #return(0)
-
 
 
 @profile
@@ -2048,18 +1960,19 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
         edgelist = []
         weightlist = []
         for edge in G.es():
-             print(edge, edge['weight'])
              if G.vs[edge.target]["name"] not in to_exclude:
                   if G.vs[edge.source]["name"] not in to_exclude:
-                     edgelist.append([ G.vs[edge.source]["name"], G.vs[edge.target]["name"]])
-                     weightlist.append(edge['weight'])
+                     if edge['weight'] >= seqsim_thresh:
+                         #if edge.source != edge.target:
+                             print("seqsim: ",G.vs[edge.source]["name"], G.vs[edge.target]["name"], edge['weight'])
+                             edgelist.append([ G.vs[edge.source]["name"], G.vs[edge.target]["name"]])
+                             weightlist.append(edge['weight'])
         # Rebuild G
         G = igraph.Graph.TupleList(edges=edgelist, directed=False)
         G.es['weight'] = weightlist
-        print("G", G)
 
         #G = G.simplify()
-
+        print("G", G)
         #seq_clusters = G.community_multilevel(weights = 'weight')
         ## The issue with walktrap is that the seq sim graph is near fully connected
         #print("multilevel", seq_clusters)
@@ -2085,7 +1998,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
         #        
         #    print("spinglass", sub_seq_clusters)
         #    for seq_cluster_G in sub_seq_clusters.subgraphs():
-        print("walktrap", seq_clusters)
+        print("After walktrap", seq_clusters)
         for seq_cluster_G in seq_clusters.subgraphs():
         
                 # Do exclusion within clusters
@@ -4177,5 +4090,92 @@ def consolidate_w_clustering(clusters_dict, seqs_aas_dict):
 #                 #new_clusters.append([aa])
 #
 #        return(new_clusters, new_rbh)
+#
+#def get_seq_groups2(seqs, seq_names, embedding_dict, logging, exclude, do_clustering, seqsim_thresh= 0.75):
+#    numseqs = len(seqs)
+#
+#    
+#    #hstates_list, sentence_embeddings = get_hidden_states(seqs, model, tokenizer, layers, return_sentence = True)
+#    #logging.info("Hidden states complete")
+#    #print("end hidden states")
+#
+#    #if padding:
+#    #    logging.info("Removing {} characters of neutral padding X".format(padding))
+#    #    hstates_list = hstates_list[:,padding:-padding,:]
+#
+#    to_exclude = []
+#
+#    G = get_seqsims(seqs, embedding_dict, seqsim_thresh = seqsim_thresh)
+#
+#    group_hstates_list = []
+#    cluster_seqnums_list = []
+#    cluster_names_list = []
+#    cluster_seqs_list = []
+#   
+#
+#    # TODO use two variable names for spaced and unspaced seqs
+#    logging.info("Removing spaces from sequences")
+#    #if padding:
+#    #    seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
+#    #else:
+#    #    seqs = [x.replace(" ", "") for x in seqs]
+#    #prev_to_exclude = []
+#    if do_clustering == True:
+#        #print("fastgreedy")
+#        #print(G)
+#    
+#      #repeat = True
+#      #
+#      #while repeat == True:
+#      d = sentence_array.shape[1]
+#      for k in range(1, 20):
+#         kmeans = faiss.Kmeans(d = d, k = k, niter = 20)
+#         kmeans.train(sentence_array)
+#    
+#   
+#         D, I = kmeans.index.search(sentence_array, 1) 
+#         print("D", D)
+#         print("I", I)
+#         clusters = I.squeeze()
+#         labels = list(zip(G.vs()['name'], clusters))
+#         #for x in labels:
+#         #    print("labels", x[0], x[1])
+#
+#
+#         group_hstates_list = []
+#         cluster_seqnums_list = []
+#         cluster_names_list = []
+#         cluster_seqs_list = []
+# 
+#         prev_to_exclude = to_exclude
+#        
+#         means = []
+#         for clustid in list(set(clusters)):
+#             print("eval clust", clustid)
+#             clust_seqs = [x[0] for x in labels if x[1] == clustid] 
+#             print("clust_seqs", clust_seqs)
+#             #print("labels from loop", labels)
+#             #for lab in labels:
+#             #     print("labels", lab, lab[0], lab[1], clustid) 
+#             #     if lab[1] == clustid:
+#             # 
+#              #         print("yes")
+#             #print("GG", G.vs()['name'])
+#             #print("GG", G.es()['weight'])
+#             #edgelist = []
+#             weightlist = []
+#             for edge in G.es():
+#                  #print(edge, edge['weight'])
+#                  #print(G.vs[edge.target]["name"], G.vs[edge.source]["name"])
+#                  if G.vs[edge.target]["name"] in clust_seqs:
+#                       if G.vs[edge.source]["name"] in clust_seqs:
+#                          weightlist.append(edge['weight'])
+#                          print(G.vs[edge.target]["name"], G.vs[edge.source]["name"], edge['weight'])
+#             print(weightlist)
+#             print("clust {} mean {}".format(clustid, np.mean(weightlist)))
+#             means.append(np.mean(weightlist))
+#         print("k {} overall mean {}".format(clustid, np.mean(means)))    
+#
+#      #return(0)
 #
 #
