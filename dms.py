@@ -20,8 +20,17 @@ def get_attn_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--fasta", dest = "fasta_path", type = str, required = True,
                         help="Fasta file")
+    parser.add_argument("-ma", "--min_attn", dest = "min_attn", type = float, required = False, default= 0.1,
+                        help="Minimum attention to plot, default: 0.1")
+    parser.add_argument("-ml", "--mutlimit", dest = "mutlimit", type = int, required = False,
+                        help="Limit attention calculations to n mutations. For testing")
     parser.add_argument("-mo", "--model", dest = "model_path", type = str, required = True,
                         help="Model directory Ex. /path/to/model_dir")
+    parser.add_argument("-mu", "--mut", dest = "mut", type = str, required = False,
+                        help="mutate position x to y. ex. '102_w' or 'p_102_w' ")
+    parser.add_argument("-mf", "--mutfile", dest = "mutfile", type = str, required = False,
+                        help="File with mutate positions x to y. One per line ex. '102_w' or 'p_102_w' ")
+
     parser.add_argument("-o", "--out", dest = "outfile", type = str, required = True,
                         help="Outfile name")
     args = parser.parse_args()
@@ -111,17 +120,17 @@ def compare_attn_networks(g1list, g2list, summary = True):
         total_weight_g2 = sum(g2.es['weight'])
         distinct_weight_g2 = total_weight_g2 - intersect_weight_g2
         
-        print("shared_nodes, shared_edges, nodes1, nodes2, edges1, edges2, distinct_edges1, distinct_edges2, distinct_weight_g1, distinct_weight_g2, total_weight_g1, total_weight_g2") 
-        print(inter.vcount(), inter.ecount(), nodes1, nodes2, edges1, edges2, distinct_edges1, distinct_edges2, distinct_weight_g1, distinct_weight_g2, total_weight_g1, total_weight_g2) 
+        #print("shared_nodes, shared_edges, nodes1, nodes2, edges1, edges2, distinct_edges1, distinct_edges2, distinct_weight_g1, distinct_weight_g2, total_weight_g1, total_weight_g2") 
+        #print(inter.vcount(), inter.ecount(), nodes1, nodes2, edges1, edges2, distinct_edges1, distinct_edges2, distinct_weight_g1, distinct_weight_g2, total_weight_g1, total_weight_g2) 
         if summary == False:
             outlist.append([nodes1, nodes2, edges1, edges2, distinct_edges1, distinct_edges2, distinct_weight_g1, distinct_weight_g2, total_weight_g1, total_weight_g2])
         else:
-            score = ( 2 * inter.vcount() + inter.ecount()) / (nodes1 + nodes2 + edges1 + edges2)
-            print("node/edge overlap  :", score)
-            score = (inter.ecount() / min(edges1, edges2))
-            print("Overlap Coefficient:", score)
+            #score = ( 2 * inter.vcount() + inter.ecount()) / (nodes1 + nodes2 + edges1 + edges2)
+            #print("node/edge overlap  :", score)
+            #score = (inter.ecount() / min(edges1, edges2))
+            #print("Overlap Coefficient:", score)
             score = (inter.ecount() / (edges1 + edges2 - inter.ecount()))
-            print("Jaccard Coefficient:", score)
+            #print("Jaccard Coefficient:", score)
 
             outdict[layer_head] = score
     return outdict
@@ -189,19 +198,23 @@ def load_model(model_path):
 
 #@profile
 def wrap_attns_identifiers(name, model, tokenizer, tokens, min_attn = 0.1, mut = None):
+
     tokens = format_tokens(tokens, mut)
+    print("tokens formatted")
     attns = get_attn_data(model, tokenizer, tokens, min_attn  = min_attn)
+    print("attns calculated")
     num_layers_list = list(range(1, len(attns) + 1)) # actual line
     #num_layers_list = list(range(1, 3))
     #num_heads = len(attns[0])
     num_heads_list = list(range(1, len(attns[0]) + 1))
     tokens_len = list(range(len(tokens)))
     layers_list, heads_list, aa1_list, pos1_list, aa2_list, pos2_list, attns_list = wrap_attns(np.array(attns, dtype = "float32"), nb.typed.List(num_layers_list), nb.typed.List(num_heads_list), nb.typed.List(tokens), nb.typed.List(tokens_len), min_attn)
+    print("attns formatted")
     
     res1_list = ["-".join([x, str(y)]) for x,y in zip(aa1_list,pos1_list)]
     res2_list = ["-".join([x, str(y)]) for x,y in zip(aa2_list,pos2_list)]
     df = pd.DataFrame(list(zip(layers_list, heads_list, res1_list, res2_list, attns_list)), columns=['layer','head','res1','res2','attention'])
-    
+    print("attn_df created") 
     #attn_indices= [idx for idx,val in enumerate(outlist_attn) if val >= min_attn]
     #outlist_attn = [val for idx,val in enumerate(outlist_attn) if idx in attn_indices]
     #print(len(outlist_attn), len(attn_indices), attn_indices[0:10])
@@ -216,7 +229,7 @@ def wrap_attns_identifiers(name, model, tokenizer, tokens, min_attn = 0.1, mut =
     #print(outlist[0:5])
     return(df)
 
-@jit(nopython=False)
+@jit(nopython=True)
 def wrap_attns(attns, num_layers_list, num_heads_list, tokens, tokens_len, min_attn):
     layers = []
     heads = []
@@ -254,12 +267,26 @@ if __name__ == "__main__":
     fasta_path = args.fasta_path
     model_path = args.model_path
     attn_outfile = args.outfile
-    min_attn = 0.1
+    min_attn = args.min_attn
+    mut = args.mut
+    mutfile = args.mutfile
+    mutlimit = args.mutlimit
     model, tokenizer = load_model(model_path)
+
+    mutlist = []
+    if mutfile is not None:
+         with open(mutfile, "r") as m:
+            raw_muts = m.readlines()
+         muts = [x.replace("\n", "") for x in raw_muts]
+         mutlist = mutlist + muts
+    if mut is not None:
+        mutlist = mutlist + [mut]  # Always do wild-type first
+    print(mutlist)
+
+
     
     amino_acids = ['A', 'R', 'N', 'D', 'C', 'E', 'Q', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V']
-    mutlist = []
-    #g1list, group_names = attndf_to_graphlist(df1) 
+     #g1list, group_names = attndf_to_graphlist(df1) 
     
     bert_config = BertConfig.from_pretrained(model_path)
     num_layers = bert_config.num_hidden_layers
@@ -273,15 +300,17 @@ if __name__ == "__main__":
     #o.write("proteinID,mutation{}\n".format(headstr))#"edges1,edges2,distinct_edges1,distinct_edges2,distinct_edge_weight1,distinct_edge_weight2,total_edge_weight1,total_edge_weight2\n")
     with open(fasta_path) as handle:
         for record in SeqIO.parse(handle, "fasta"):
-            for seq_index, seq in enumerate(record.seq):
+           for seq_index, seq in enumerate(record.seq):
+            if len(mutlist) ==  0:  # If havent provided a mutation list, do full dms scan 
                 for aa_index, mut_seq in enumerate(amino_acids):
                     if (seq != mut_seq):
                         mutation = seq + str(seq_index+1) + mut_seq
                         #print(mutation) 
-                        mutlist.append(mutation)
+                        mutlist = mutlist + [mutation]
             tokens = list(str(record.seq))
             #wild type attention calc: 
             #outtable_wt = []
+            print("start WT calculation")
             df_wt_attns = wrap_attns_identifiers(name, model, tokenizer, tokens, min_attn = min_attn)
             glist_wt, group_names = attndf_to_graphlist(df_wt_attns)
             ## ['sp|Q92781|RDH5_HUMAN-30-16', 30, 16, 'I', 198, 'G', 156, 0.10365235060453415]i
@@ -294,7 +323,10 @@ if __name__ == "__main__":
             #print(glist_wt[0:5] )
             name = str(record.id)
             list_of_scoredicts = []
-            for mutation in mutlist[0:3]:
+            if mutlimit:
+                mutlist = mutlist[0:mutlimit]
+            print("Mutlist", mutlist)
+            for mutation in mutlist:
                 print(mutation) 
                 tokens_for_mut = copy.deepcopy(tokens) # Necessary 
                 df_mut_attns = wrap_attns_identifiers(name, model, tokenizer, tokens_for_mut, min_attn = min_attn, mut = mutation)
@@ -303,7 +335,6 @@ if __name__ == "__main__":
                 score_dict['mutation']  = mutation    
                 list_of_scoredicts.append(score_dict)
             scores_tbl = pd.DataFrame(list_of_scoredicts)
-            print(scores_tbl)
             scores_tbl = scores_tbl.fillna(1) # If attentions missing from heads in both mut and wt, they're the same
             observed_heads = [x for x in headlist if x in scores_tbl.columns]
             scores_tbl['proteinID'] = record.id
