@@ -10,7 +10,7 @@ import argparse
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
-from sentence_transformers import LoggingHandler, SentenceTransformer, models, evaluation
+#from sentence_transformers import LoggingHandler, SentenceTransformer, models, evaluation
 #import numba as nb
 #import awkward as ak
 import time
@@ -320,7 +320,6 @@ def load_model(model_path):
     print("load_model:model_path", model_path)
     if "bert" in model_path:
         print("Bert model")
-        print("load model")
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         model = AutoModel.from_pretrained(model_path, output_hidden_states=True)
     if "t5" in model_path:
@@ -328,6 +327,10 @@ def load_model(model_path):
         tokenizer = T5Tokenizer.from_pretrained(model_path)
         model = T5EncoderModel.from_pretrained(model_path, output_hidden_states=True)
         #model.half() # Put model in half precision mode for faster embedding
+    else:
+        print("Automodel")
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model = AutoModel.from_pretrained(model_path, output_hidden_states=True)
     return(model, tokenizer)
 
 # ? 

@@ -1,11 +1,13 @@
 import pandas as pd
 import argparse
+from functools import partial
 from igraph import *
 import io
 import sys 
 import time
 import torch
 import numpy as np
+from torch.multiprocessing import Pool
 from Bio import SeqIO
 from transformers import AutoModel, AutoTokenizer, BertConfig
 import copy
@@ -20,6 +22,9 @@ def get_attn_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--fasta", dest = "fasta_path", type = str, required = True,
                         help="Fasta file")
+    parser.add_argument("-n", "--num_processes", dest = "num_processes", type = int, required = False, default= 10,
+                        help="Number of threads, default: 10")
+
     parser.add_argument("-ma", "--min_attn", dest = "min_attn", type = float, required = False, default= 0.1,
                         help="Minimum attention to plot, default: 0.1")
     parser.add_argument("-ml", "--mutlimit", dest = "mutlimit", type = int, required = False,
@@ -171,17 +176,26 @@ def get_attn_data(model, tokenizer, tokens, min_attn = 0.1, start_index=0, end_i
     #    tokens = tokens[:max_seq_len - 2]  # Account for SEP, CLS tokens (added in next step)
     #print("tokens", tokens)
     token_idxs = tokenizer.encode(tokens, is_split_into_words=True)#.tolist()
+    #print("tokens encoded")
+
     #if max_seq_len:
     #    assert len(token_idxs) == min(len(tokens) + 2, max_seq_len)
     #else:
     #    assert len(token_idxs) == len(tokens) + 2
-    inputs = torch.tensor(token_idxs).unsqueeze(0)
+    inputs = torch.tensor(token_idxs).unsqueeze(0).cuda()
+    #print("inputs made")
     with torch.no_grad():
         attns = model(inputs)[-1]
         # Remove attention from <CLS> (first) and <SEP> (last) token
+    #print("got attns")
     attns = [attn[:, :, 1:-1, 1:-1] for attn in attns]
-    attns = torch.stack([attn.squeeze(0) for attn in attns])
-    attns = attns.tolist()
+    #print("remove cls")
+    attns = torch.stack([attn.squeeze(0) for attn in attns]).cpu()
+    #print("stack")
+    #attns_out = np.array(attns)
+   # print("toarray")
+    #attns_out = attns_out.tolist()
+    #print("tolist")
     return(attns)
 
 #@profile
@@ -197,40 +211,44 @@ def load_model(model_path):
     return(model, tokenizer)
 
 #@profile
-def wrap_attns_identifiers(name, model, tokenizer, tokens, min_attn = 0.1, mut = None):
+def get_attn_df(name, model, tokenizer, tokens, min_attn = 0.1, mut = None):
 
     tokens = format_tokens(tokens, mut)
-    print("tokens formatted")
+    #print("tokens formatted")
     attns = get_attn_data(model, tokenizer, tokens, min_attn  = min_attn)
     print("attns calculated")
-    num_layers_list = list(range(1, len(attns) + 1)) # actual line
-    #num_layers_list = list(range(1, 3))
-    #num_heads = len(attns[0])
-    num_heads_list = list(range(1, len(attns[0]) + 1))
-    tokens_len = list(range(len(tokens)))
-    layers_list, heads_list, aa1_list, pos1_list, aa2_list, pos2_list, attns_list = wrap_attns(np.array(attns, dtype = "float32"), nb.typed.List(num_layers_list), nb.typed.List(num_heads_list), nb.typed.List(tokens), nb.typed.List(tokens_len), min_attn)
-    print("attns formatted")
+    layers_list, heads_list, aa1_list, pos1_list, aa2_list, pos2_list, attns_list = wrap_attns(np.array(attns), tokens, min_attn)
+    #layers_list, heads_list, aa1_list, pos1_list, aa2_list, pos2_list, attns_list = wrap_attns(np.array(attns, dtype = "float32"), nb.typed.List(num_layers_list), nb.typed.List(num_heads_list), nb.typed.List(tokens), nb.typed.List(tokens_len), min_attn)
     
     res1_list = ["-".join([x, str(y)]) for x,y in zip(aa1_list,pos1_list)]
     res2_list = ["-".join([x, str(y)]) for x,y in zip(aa2_list,pos2_list)]
     df = pd.DataFrame(list(zip(layers_list, heads_list, res1_list, res2_list, attns_list)), columns=['layer','head','res1','res2','attention'])
-    print("attn_df created") 
-    #attn_indices= [idx for idx,val in enumerate(outlist_attn) if val >= min_attn]
-    #outlist_attn = [val for idx,val in enumerate(outlist_attn) if idx in attn_indices]
-    #print(len(outlist_attn), len(attn_indices), attn_indices[0:10])
-    #print(outlist_attn[0:5])
-
-    #outlist_id = wrap_attns(name, nb.typed.List(num_layers_list), nb.typed.List(num_heads_list), nb.typed.List(tokens), nb.typed.List(tokens_len), mut, attn_indices)
-
-    #old code to zip list of lists and list
-    #outlist = [i + [j] for i, j in zip(outlist_id, outlist_attn)]
-    #print(outlist_id[0:5])
-    #print(outlist_attn[0:5])
-    #print(outlist[0:5])
     return(df)
 
-@jit(nopython=True)
-def wrap_attns(attns, num_layers_list, num_heads_list, tokens, tokens_len, min_attn):
+
+def wrap_attns(attns, tokens, min_attn):
+   '''
+   Get indices where attn above min_attn
+   Returns lists of all amino acid pairs above threshold
+   for all layers and heads
+   '''
+   # Attns have dimensions (layers, heads, tokens, tokens)
+   attns_idx = np.argwhere(attns >= min_attn)
+   attns_sel = attns[attns >= min_attn] 
+   attns_idx_T = attns_idx.T
+   layers = attns_idx_T[0] + 1
+   heads = attns_idx_T[1] + 1
+   pos1s = attns_idx_T[2] + 1
+   pos2s = attns_idx_T[3] + 1 
+   aa1s = [tokens[x] for x in attns_idx_T[2]] 
+   aa2s = [tokens[x] for x in attns_idx_T[3]] 
+   return(layers, heads, aa1s, pos1s, aa2s, pos2s, attns_sel) 
+
+
+
+
+
+def wrap_attns_old(attns, num_layers_list, num_heads_list, tokens, tokens_len, min_attn):
     layers = []
     heads = []
     attns_list = []
@@ -239,8 +257,10 @@ def wrap_attns(attns, num_layers_list, num_heads_list, tokens, tokens_len, min_a
     aa2s = []
     pos2s = []
     for layer in num_layers_list: # Max 31
+         print(layer)
          for head in num_heads_list: # Max 17
             attn_head = attns[layer - 1][head - 1]
+            print(attn_head.shape)
             complete = []
             for i in tokens_len:
                 complete.append(i)
@@ -248,7 +268,9 @@ def wrap_attns(attns, num_layers_list, num_heads_list, tokens, tokens_len, min_a
                     if j in complete:
                        continue
                     a = attn_head[i][j]
+                    #print(a.shape)
                     if a >= min_attn and a is not None:
+                        
                         pos1 = i + 1
                         pos2 = j + 1
                         aa1 = tokens[i]
@@ -262,17 +284,30 @@ def wrap_attns(attns, num_layers_list, num_heads_list, tokens, tokens_len, min_a
                         layers.append(layer)
     return(layers, heads, aa1s, pos1s, aa2s, pos2s, attns_list)
 
+def get_score_dict(mutation, tokens, name, model, tokenizer, glist_wt, min_attn):
+                print(mutation) 
+                tokens_for_mut = copy.deepcopy(tokens) # Necessary 
+                df_mut_attns = get_attn_df(name, model, tokenizer, tokens_for_mut, min_attn = min_attn, mut = mutation)
+                glist_mut, group_names = attndf_to_graphlist(df_mut_attns)
+                score_dict = compare_attn_networks(glist_wt, glist_mut)
+                score_dict['mutation']  = mutation    
+                return(score_dict)
+
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn')# good solution !!!!
     args = get_attn_args()
     fasta_path = args.fasta_path
     model_path = args.model_path
     attn_outfile = args.outfile
     min_attn = args.min_attn
     mut = args.mut
+    num_processes = args.num_processes
     mutfile = args.mutfile
     mutlimit = args.mutlimit
     model, tokenizer = load_model(model_path)
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model.share_memory()
     mutlist = []
     if mutfile is not None:
          with open(mutfile, "r") as m:
@@ -300,18 +335,23 @@ if __name__ == "__main__":
     #o.write("proteinID,mutation{}\n".format(headstr))#"edges1,edges2,distinct_edges1,distinct_edges2,distinct_edge_weight1,distinct_edge_weight2,total_edge_weight1,total_edge_weight2\n")
     with open(fasta_path) as handle:
         for record in SeqIO.parse(handle, "fasta"):
-           for seq_index, seq in enumerate(record.seq):
             if len(mutlist) ==  0:  # If havent provided a mutation list, do full dms scan 
-                for aa_index, mut_seq in enumerate(amino_acids):
+              for seq_index, seq in enumerate(record.seq):
+   
+                for  mut_seq in amino_acids:
                     if (seq != mut_seq):
-                        mutation = seq + str(seq_index+1) + mut_seq
-                        #print(mutation) 
+                        mutation = seq + str(seq_index + 1) + mut_seq
                         mutlist = mutlist + [mutation]
+            if mutlimit:
+                mutlist = mutlist[0:mutlimit]
+            print("Mutlist", mutlist)
+
             tokens = list(str(record.seq))
             #wild type attention calc: 
             #outtable_wt = []
             print("start WT calculation")
-            df_wt_attns = wrap_attns_identifiers(name, model, tokenizer, tokens, min_attn = min_attn)
+            df_wt_attns = get_attn_df(name, model, tokenizer, tokens, min_attn = min_attn)
+           
             glist_wt, group_names = attndf_to_graphlist(df_wt_attns)
             ## ['sp|Q92781|RDH5_HUMAN-30-16', 30, 16, 'I', 198, 'G', 156, 0.10365235060453415]i
             #df_wt_attns = pd.DataFrame.from_records(outlist_wt, columns=['ProteinID', 'layer', 'head', 'res1', 'pos1', 'res2', 'pos2', 'attention'])
@@ -322,18 +362,23 @@ if __name__ == "__main__":
             #df_wt_attns = pd.DataFrame.from_records(outtable_wt, columns=['layer', 'head', 'res1', 'res2', 'attention'])               
             #print(glist_wt[0:5] )
             name = str(record.id)
-            list_of_scoredicts = []
-            if mutlimit:
-                mutlist = mutlist[0:mutlimit]
-            print("Mutlist", mutlist)
-            for mutation in mutlist:
-                print(mutation) 
-                tokens_for_mut = copy.deepcopy(tokens) # Necessary 
-                df_mut_attns = wrap_attns_identifiers(name, model, tokenizer, tokens_for_mut, min_attn = min_attn, mut = mutation)
-                glist_mut, group_names = attndf_to_graphlist(df_mut_attns)
-                score_dict = compare_attn_networks(glist_wt, glist_mut)
-                score_dict['mutation']  = mutation    
-                list_of_scoredicts.append(score_dict)
+#mutation, tokens, name, model, tokenizer, glist_wt, min_attn):
+            scoredict_partial = partial(get_score_dict, tokens = tokens, name = name, model = model, tokenizer= tokenizer, glist_wt = glist_wt, min_attn = min_attn)
+            with Pool(processes = num_processes) as pool:
+                list_of_scoredicts = pool.map(scoredict_partial, mutlist)
+            #print(list_of_scoredicts)
+            #for mutation in mutlist:
+            #    score_dict = get_score_dict(mutation, tokens, name, model, tokenizer, glist_wt, min_attn = min_attn)
+            #    list_of_scoredicts.append(score_dict)
+            
+            
+                #print(mutation) 
+                #tokens_for_mut = copy.deepcopy(tokens) # Necessary 
+                #df_mut_attns = get_attn_df(name, model, tokenizer, tokens_for_mut, min_attn = min_attn, mut = mutation)
+                #glist_mut, group_names = attndf_to_graphlist(df_mut_attns)
+                #score_dict = compare_attn_networks(glist_wt, glist_mut)
+                #score_dict['mutation']  = mutation    
+                #print(score_dict)
             scores_tbl = pd.DataFrame(list_of_scoredicts)
             scores_tbl = scores_tbl.fillna(1) # If attentions missing from heads in both mut and wt, they're the same
             observed_heads = [x for x in headlist if x in scores_tbl.columns]

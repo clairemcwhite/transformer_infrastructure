@@ -3,7 +3,7 @@
 import torch
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
-
+from sklearn.metrics.pairwise import cosine_similarity
 import random
 from transformer_infrastructure.hf_utils import build_index_flat, build_index_voronoi
 from transformer_infrastructure.run_tests import run_tests
@@ -369,12 +369,7 @@ def get_looser_scores(aa, index, hidden_states):
      hidden_state_aa = np.take(hidden_states, [aa.index], axis = 0)
      # Search the total number of amino acids
      n_aa = hidden_states.shape[0]
-     #index.nprobe = 100
      D_aa, I_aa =  index.search(hidden_state_aa, k = n_aa)
-     #print("looser scores")
-     #print(aa)
-     #print(D_aa.tolist())
-     #print(I_aa.tolist())
      return(list(zip(D_aa.tolist()[0], I_aa.tolist()[0])))
 
 
@@ -1326,7 +1321,7 @@ def get_besthits(I,  minscore = 0.1 ):
 
 
 @profile
-def get_rbhs(hitlist_top):
+def get_rbhs(hitlist_top, min_edges = 0):
     '''
     [aa1, aa2, score (higher = better]
     '''
@@ -1338,12 +1333,30 @@ def get_rbhs(hitlist_top):
     
     hitlist = []
     G_hitlist.es['weight'] = weights 
-    for i in range(len(G_hitlist.es())):
-        if rbh_bool[i] == True:
-           source_vertex = G_hitlist.vs[G_hitlist.es()[i].source]["name"]
-           target_vertex = G_hitlist.vs[G_hitlist.es()[i].target]["name"]
-           score = G_hitlist.es()[i]['weight']
-           hitlist.append([source_vertex, target_vertex, score])
+
+    G_hitlist.es.select(_is_mutual=False).delete()
+    G_hitlist.vs.select(_degree=0).delete()
+
+    
+
+    #for i in range(len(G_hitlist.es())):
+    #    if rbh_bool[i] == True:
+    #       source_vertex = G_hitlist.vs[G_hitlist.es()[i].source]["name"]
+    #       target_vertex = G_hitlist.vs[G_hitlist.es()[i].target]["name"]
+    #       score = G_hitlist.es()[i]['weight']
+    #       hitlist.append([source_vertex, target_vertex, score])
+
+    if min_edges > 0:
+        edge_sel = 2 * min_edges
+        G_hitlist.vs.select(_degree=min_edges).delete()    
+
+    sources = [G_hitlist.vs[x.source]['name'] for x in G_hitlist.es()]
+    targets = [G_hitlist.vs[x.target]['name'] for x in G_hitlist.es()]
+    weights = G_hitlist.es()['weight']
+ 
+    print("len check",  len(sources), len(targets),len(weights))
+    hitlist = list(zip(sources,targets, weights))
+
     return(hitlist)
 
 
@@ -2272,7 +2285,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
     #logging.info("get top hitlist")
   
     logging.info("get reciprocal best hits")
-    rbh_list = get_rbhs(hitlist_all) 
+    rbh_list = get_rbhs(hitlist_all, min_edges = 5) 
     logging.info("got reciprocal best hits")
    
     #remove_streaks = False
@@ -2370,7 +2383,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
     history_unassigned = {'onebefore':[], 'twobefore':[], 'threebefore':[]}
     too_small = [] 
     rbh_dict = {}
-
+    match_dict = {}
     ############## CONTROL LOOP ###################
     for gapfilling_attempt in range(0, 200):
         gapfilling_attempt = gapfilling_attempt + 1
@@ -2461,7 +2474,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
                new_clusterlist = []
                pos_to_clustid, clustid_to_clust = get_cluster_dict(clusterlist)
                unassigned = get_unassigned_aas(seqs_aas, pos_to_clustid)
-            cluster_order, clustid_to_clust, pos_to_clustid, alignment = fill_in_unassigned_w_search(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, index, hidden_states,  index_to_aa, gapfilling_attempt, minclustsize = minclustsize, remove_both = True)
+            cluster_order, clustid_to_clust, pos_to_clustid, alignment, match_dict = fill_in_unassigned_w_search(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, index, hidden_states,  index_to_aa, gapfilling_attempt, minclustsize = minclustsize, remove_both = True, match_dict= match_dict)
             too_small = []
             #cluster_order_merge, clustid_to_clust_merge, pos_to_clustid_merge, alignment)
 
@@ -2601,7 +2614,7 @@ def removeSublist(lst):
 
 
 @profile
-def fill_in_unassigned_w_search(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, index, hidden_states,  index_to_aa, gapfilling_attempt, minclustsize = 1, remove_both = True):
+def fill_in_unassigned_w_search(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, index, hidden_states,  index_to_aa, gapfilling_attempt, minclustsize = 1, remove_both = True, match_dict = {}):
 
     '''
     Try group based assignment, this time using new search for each unassigned
@@ -2617,19 +2630,41 @@ def fill_in_unassigned_w_search(unassigned, seqs_aas, cluster_order, clustid_to_
 
     match_scores = []
     unassigned = format_gaps(unassigned, max(clustid_to_clust.keys())) 
+
+
     for gap in unassigned:
 
         starting_clustid =  gap[0]
         ending_clustid = gap[2]
-        
+        print(gap)
+        if starting_clustid in clustid_to_clust.keys():
+              # If before start of clusts, will be -1
+              starting_clust =  clustid_to_clust[starting_clustid]
+        else:
+              starting_clust = []
+        if ending_clustid  in clustid_to_clust.keys():
+              ending_clust =  clustid_to_clust[ending_clustid]
+        else:
+              ending_clust = []
 
-        for gap_aa in gap[1]:
-            candidates_aa = get_set_of_scores(gap_aa, index, hidden_states, index_to_aa)
-
-            # For each clustid_to_clust, it should be checked for consistency. 
-            output = get_best_matches(starting_clustid, ending_clustid, gap_aa, clustid_to_clust, candidates_aa)
-            if output:
-               matches.append(output)
+        print("already searched", gap[1], starting_clust, ending_clust)
+        print("already searched", gap[1] + starting_clust + ending_clust)
+        already_searched = frozenset(gap[1] + starting_clust + ending_clust)
+        print("already searched", frozenset(gap[1] + starting_clust + ending_clust))
+        if already_searched in match_dict.keys():
+            print("Matches pulled from cache")
+            matches = matches + match_dict[already_searched]
+        else:
+            gap_matches = []
+            for gap_aa in gap[1]:
+                candidates_aa = get_set_of_scores(gap_aa, index, hidden_states, index_to_aa)
+    
+                # For each clustid_to_clust, it should be checked for consistency. 
+                output = get_best_matches(starting_clustid, ending_clustid, gap_aa, clustid_to_clust, candidates_aa)
+                if output:
+                   gap_matches.append(output)
+            matches = matches + gap_matches
+            match_dict[already_searched] = gap_matches
 
     for x in matches:
         print("match", x)
@@ -2658,7 +2693,7 @@ def fill_in_unassigned_w_search(unassigned, seqs_aas, cluster_order, clustid_to_
         print("Clusters from best match", x)
    
     cluster_order, clustid_to_clust, pos_to_clustid, alignment = organize_clusters(new_clusterlist, seqs_aas, gapfilling_attempt, minclustsize, all_alternates_dict = all_alternates_dict)
-    return(cluster_order, clustid_to_clust, pos_to_clustid, alignment)
+    return(cluster_order, clustid_to_clust, pos_to_clustid, alignment, match_dict)
 
 
 @profile
@@ -2951,7 +2986,8 @@ def get_align_args():
 
     parser.add_argument("-o", "--outfile", dest = "out_path", type = str, required = True,
                         help="Path to outfile")
-
+    parser.add_argument("-sl", "--seqlimit", dest = "seqlimit", type = int, required = False,
+                        help="Limit to n sequences. For testing")
 
     parser.add_argument("-ex", "--exclude", dest = "exclude", action = "store_true",
                         help="Exclude outlier sequences from initial alignment process")
@@ -3080,6 +3116,7 @@ if __name__ == '__main__':
     heads = args.heads
     model_name = args.model_name
     pca_plot = args.pca_plot
+    seqlimit = args.seqlimit
     headnorm = args.headnorm
     seqsim_thresh  = args.seqsimthresh 
     # Keep to demonstrate effect of clustering or not
@@ -3109,7 +3146,7 @@ if __name__ == '__main__':
     logging.info("Check for torch")
     logging.info(torch.cuda.is_available())
 
-    padding = 10
+    padding = 0
     minscore1 = 0.5
 
     logging.info("model: {}".format(model_name))
@@ -3118,7 +3155,10 @@ if __name__ == '__main__':
     logging.info("first score thresholds: {}".format(minscore1))
    
     seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding)
-    
+    if seqlimit:
+       seq_names = seq_names[0:seqlimit]
+       seqs = seqs[0:seqlimit]
+       seqs_spaced = seqs_spaced[0:seqlimit]
 
  
     print("Sequences", seqs)    
@@ -3201,7 +3241,6 @@ if __name__ == '__main__':
              
             # Too much unpredictable behavior, need to include scores if doing this  
             #cluster_order, clustid_to_clust = squish_clusters_longrange2(alignment)
-            alignment = make_alignment(cluster_order, group_seqnums, clustid_to_clust)
     
             # Need all the embeddings from the sequence
             # Need clustid_to_clust
@@ -3237,7 +3276,7 @@ if __name__ == '__main__':
             if len(cluster_names_list) == 1 and ( len(excluded_records) == 0 or fully_exclude == True ) :
                 with open(outfile, "w") as o:
                       o.write(clustal_align_i)
-                sys.exit()
+                #sys.exit()
            
          
 
@@ -3246,7 +3285,7 @@ if __name__ == '__main__':
    
     consolidator = "mafft"
     if consolidator == "mafft":
-
+      if len(cluster_names_list) > 1 and ( len(excluded_records) > 0 or fully_exclude == False ) :
     
         seq_count = 1
     
@@ -3274,21 +3313,32 @@ if __name__ == '__main__':
         except Exception as E:
             print("Not doing mafft merge") 
     
-    if consolidator == "embeddings":
-              for i in range(len(alignments)):
-                    new_array = np.array()
+    #if consolidator == "embeddings":
+    print("is this happening")
+    for i in range(len(alignments)):
+                    mylist = []
                     cluster_order, clustid_to_clust = clusts_from_alignment(alignments[i])
-                    print(cluster_order)
-                    print(clustid_to_clust)
+                    #print(cluster_order)
+                    #print(clustid_to_clust)
                     for key, value in clustid_to_clust.items():
                           clustid_embeddings = []
                           indexes = [x.index for x in value]
-                          print("indexes", indexes)
+                          #print("indexes", indexes)
                           clustid_embeddings = np.take(hidden_states_list[i], indexes, 0)
-                          print("clustid_embeddings", clustid_embeddings) 
-                          mean_embedding = clustid_embeddings.mean(axis=0) 
-                          print(mean_embedding)
-                          new_array = np.append(new_array, mean_embedding, axis=1)
+                          #print("clustid_embeddings", clustid_embeddings) 
+                          #mean_embedding = clustid_embeddings.mean(axis=0)
+                          #for i in range(len(clustid_embeddings)):
+                          clustid_embeddings = normalize(clustid_embeddings, axis =1, norm = "l2")
+                          if len(indexes) > 1:
+                              cosim = cosine_similarity(clustid_embeddings)
+                              upper = cosim[np.triu_indices(cosim.shape[0], k = 1)]
+                              #print(upper)
+                              mean_cosim = np.mean(upper)
+                          else:
+                             mean_cosim = 0
+                          print(key, mean_cosim, len(indexes))
+                          #print("mean embedding", mean_embedding)
+                          #new_array = np.append(new_array, mean_embedding, axis=1)
 
 
 

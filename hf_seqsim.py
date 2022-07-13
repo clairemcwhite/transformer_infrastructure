@@ -292,29 +292,13 @@ def seq_index_search(sentence_array, k_select, s_index = None):
     s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
     return(s_distance, s_index2)
 
-def get_seqsims(seqs, embedding_dict, seqsim_thresh = 0.75, k = None, s_index = None, s_sigma_index = None, scoretype = "cosinesim"):
-    numseqs = len(seqs)
+def get_seqsims(sentence_array, k = None, s_index = None):
 
-    #print("seqsim_thresh", seqsim_thresh)
     print("k", k)
-    #padded_seqlen = embedding_dict['aa_embeddings'].shape[1]
-    #logging.info("Padded sequence length: {}".format(padded_seqlen))
-    #print(embedding_dict['aa_embeddings'].shape)
-    # numseqs x seqlen x  dimension
-    #aa_array = np.array(embedding_dict['aa_embeddings'])
-    #print("AA", aa_array.shape)
-    ##sentence_array = aa_array[:,:, :4*1024]
-    #print("AA", aa_array.shape)
-      
-    ## Get sentence embeddings by averaging aa embeddings
-    #sentence_array = np.mean(aa_array, axis = 1)
-    #print("sent", sentence_array.shape)
-    # print(sentence_array)
     if k:
        k_select = k
     else:
        k_select = numseqs
-    sentence_array = np.array(embedding_dict['sequence_embeddings']).astype(np.float32) 
     start_time = time()
 
     print("Searching index")
@@ -348,7 +332,8 @@ def get_seqsim_args():
 
     parser.add_argument("-o", "--outfile", dest = "out_path", type = str, required = True,
                         help="Path to outfile")
-
+    parser.add_argument("-ml", "--minlength", dest = "minlength", type = int, required = False,
+                        help="If present, minimum length of sequences to search against index")
 
     parser.add_argument("-ex", "--exclude", dest = "exclude", action = "store_true",
                         help="Exclude outlier sequences from initial alignment process")
@@ -413,7 +398,6 @@ def get_w2(m1, m2, s1, s2):
 def numba_w2(m1, m2, s1, s2, w2):
 
     for i in range(m1.shape[0]):
-         
         w2[int(i)] = np.sqrt((m1[i] - m2[i])**2 + (s1[i] - s2[i])**2)
  
     return w2
@@ -431,6 +415,7 @@ if __name__ == '__main__':
     print("args parsed", time() - true_start)
     fasta_path = args.fasta_path
     embedding_path = args.embedding_path
+    minlength = args.minlength
     outfile = args.out_path
     exclude = args.exclude
     fully_exclude = args.fully_exclude
@@ -476,7 +461,10 @@ if __name__ == '__main__':
     logging.info("padding: {}".format(padding))
 
     faiss.omp_set_num_threads(10) 
-    seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding)
+    if minlength:
+      seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding, minlength = minlength)
+    else:
+      seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding)
     print("seqs parsed", time() - true_start)
    
     if embedding_path:
@@ -537,7 +525,10 @@ if __name__ == '__main__':
             
     #kl = tf.keras.losses.KLDivergence()
     # Step 1: Use means to get local area of sequences
-    G = get_seqsims(seqs, embedding_dict, seqsim_thresh = seqsim_thresh, k = k, s_index = s_index, scoretype = scoretype)
+    sentence_array = np.array(embedding_dict['sequence_embeddings']).astype(np.float32) 
+    if not k:
+       k = len(seqs)
+    G = get_seqsims(sentence_array, k = k, s_index = s_index)
 
     print("similarities made", time() - true_start)
     print(outfile)
@@ -566,7 +557,7 @@ if __name__ == '__main__':
 
     with open(outfile, "w") as o:
         #o.write("source,target,score,overlap,kl,w2_mean,w2_vec,euc_mean,euc_sigma\n")
-        o.write("source,target,distance,cosinesim,w2_mean\n")
+        o.write("source,target,distance,cosinesim,w2_mean,w2_mean_neg_e,w2_mean_neg_e_1_10\n")
         e_start = time()
         for edge in G.es():
            #print(edge)
@@ -591,6 +582,10 @@ if __name__ == '__main__':
            target_mean = target_mean_dict[target_idx]
            #print(target_mean)
            target_sigma = target_sigma_dict[target_idx]
+           #print(source_mean)
+           #print(target_mean)
+           #print(source_sigma)
+           #print(target_sigma)
            #d_end = time()
            d_span = time()  -d_start
 
@@ -640,8 +635,8 @@ if __name__ == '__main__':
            ###m_span = time() - m_start
           ### k_start = time()
            #kls = [kl_gauss(m1, s1, m2, s2) for  m1, m2, s1, s2 in zip(source_mean, target_mean, source_sigma, target_sigma)]    
-           ###ovls = vec_get_ovl(source_mean, target_mean, source_sigma, target_sigma)
-          ### ovl = np.mean(ovls)
+           #ovls = vec_get_ovl(source_mean, target_mean, source_sigma, target_sigma)
+           #ovl = np.mean(ovls)
            ###k_span = time() - k_start
            #x = np.random.normal(source_mean, source_sigma)
            #y = np.random.normal(target_mean, target_sigma)
@@ -680,9 +675,12 @@ if __name__ == '__main__':
            #print(nb_w2_vect)
            nb_w2_vect = numba_w2(source_mean, target_mean,source_sigma, target_sigma, nb_w2_vect)
            nb_w2_vect_span = time() - nb_w2_vect_start
-           w2_out = 1 - np.mean(nb_w2_vect)
-
-
+           #print("nb vect", nb_w2_vect)
+           #w2_out = 1 - np.mean(nb_w2_vect) # Wrong, not bounded by 1
+           mean_w2 = np.mean(nb_w2_vect)
+           w2_out = 1/(1 + mean_w2)  # somewhat flips
+           w2_e_out = np.exp(-mean_w2)
+           w2_ediv_out = np.exp(-mean_w2/10)
            #nb_o_vect_start = time()
            #nb_o_vect = np.empty(source_mean.shape[0] , dtype=np.float32)
            #print(nb_o_vect)
@@ -700,8 +698,10 @@ if __name__ == '__main__':
                 if weight < 0.99:
                       print("Warning, score for {} and {} should be close to 1, but is {}. check indices".format(source, target, weight))
                 #continue
+           #print(source,target,weight,cosinesim,w2_out, ovl)
+
            #o.write("{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.10f},{},{},{}\n".format(source, target, weight, ovl, kl_out, w2_out, w2_vect, euc_mean, euc_sigma, nb_w2_vect))   
-           o.write("{},{},{:.5f},{:.5f},{:.8f}\n".format(source,target,weight,cosinesim,w2_out))
+           o.write("{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f}\n".format(source,target,weight,cosinesim,w2_out,w2_e_out,w2_ediv_out))
     e_span = time() - e_start
     print("second similarty taken in {} seconds".format(e_span))
     print("outfile made", time() - true_start)

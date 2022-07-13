@@ -54,6 +54,8 @@ def get_index_args():
     
     parser.add_argument("-e", "--emb", dest = "embedding_path", type = str, required = False,
                         help="Path to embeddings")
+    parser.add_argument("-ml", "--minlength", dest = "minlength", type = int, required = False, default = 140,
+                        help="Minimum length of sequences to add to the index")
 
     parser.add_argument("-b", "--base_outfile", dest = "base_outfile", type = str, required = True,
                         help="Path to outfile basename to store index(es) and id mapping, b.mean.faissindex, b.sigma.faissindex, b.faissindex.idmapping")
@@ -73,7 +75,8 @@ def get_index_args():
 
     parser.add_argument("-l2", "--headnorm", dest = "headnorm",  action = "store_true", required = False, 
                         help="Take L2 normalization of each head")
-
+    parser.add_argument("-ap", "--append", dest = "append",  action = "store_true", required = False, 
+                        help="Append to existing index instead of starting a new one")
     parser.add_argument("-t", "--truncate", dest = "truncate",  type = int, required = False, default = 12000,
                         help="Default 12000. (23000 is too long)")
     parser.add_argument("-s", "--scoretype", dest = "scoretype",  type = str, required = False, default = "euclidean", choices = ["cosinesim", "euclidean"],
@@ -84,10 +87,24 @@ def get_index_args():
     return(args)
 
 
+def add_to_index(embedding_dict, mean_index, mean_outfile, sigma_index, sigma_outfile, strat = "meansig", scoretype = "euclidean"): 
+    mean_embeddings = np.array(embedding_dict['sequence_embeddings']).astype(np.float32)
+    if scoretype == "euclidean": 
+        mean_index = build_index_flat(mean_embeddings, index = mean_index, scoretype = scoretype, normalize_l2 = False, return_norm = False)
+    else:
+        mean_index, norm = build_index_flat(mean_embeddings, index = mean_index, scoretype = scoretype, normalize_l2 = True, return_norm = True)
+
+    faiss.write_index(mean_index, mean_outfile)
+    if strat == "meansig":
+        sigma_embeddings = np.array(embedding_dict['sequence_embeddings_sigma']).astype(np.float32) 
+        sigma_index = build_index_flat(sigma_embeddings, index = sigma_index, scoretype = "euclidean", normalize_l2 = False, return_norm = False)
+        faiss.write_index(sigma_index, sigma_outfile)
+    return(mean_index, sigma_index)
+
 if __name__ == '__main__':
 
     args = get_index_args()
-
+    append = args.append
     fasta_paths = args.fasta_paths
     embedding_path = args.embedding_path
     base_outfile = args.base_outfile
@@ -98,6 +115,7 @@ if __name__ == '__main__':
     headnorm = args.headnorm
     truncate = args.truncate
     strat = args.strat
+    minlength = arg.minlength
     scoretype = args.scoretype
     # Keep to demonstrate effect of clustering or not
  
@@ -128,15 +146,26 @@ if __name__ == '__main__':
     sigma_outfile =  "{}.sigma.faissindex".format(base_outfile) 
 
     if os.path.exists(index_key_outfile):
-       print("Warning, appending to existing file")
-       print("If unwanted, remove previous index before starting")
+      if append == False:        
+         os.remove(index_key_outfile)
+         os.remove(mean_outfile)
+         os.remove(sigma_outfile)
 
     with open(index_key_outfile, "a") as ok:
+        if append == False:
+             count = 0
+        else:
+             # continue with the last idx + 1
+             with open(index_key_outfile, "r") as i:
+                 count = int(i.readlines()[-1].split(",")[1]) + 1
+
+
         for fasta_path in fasta_paths: 
         
-            seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, truncate = truncate, padding = padding, minlength=140)
+            seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, truncate = truncate, padding = padding, minlength=minlength)
             print("Sequences loaded") 
             #avoid loading too many sequences into memory
+
             for i in range(0, len(seq_names), 1000):
                 chunk_seq_names  = seq_names[i:i + 1000]
                 chunk_seqs_spaced  = seqs_spaced[i:i + 1000]
@@ -152,20 +181,8 @@ if __name__ == '__main__':
                                         padding = padding,
                                         heads = headnames, 
                                         strat = strat)
-                mean_embeddings = np.array(embedding_dict['sequence_embeddings']).astype(np.float32)
-                if scoretype == "euclidean": 
-                    mean_index = build_index_flat(mean_embeddings, index = mean_index, scoretype = scoretype, normalize_l2 = False, return_norm = False)
-                else:
-                    mean_index, norm = build_index_flat(mean_embeddings, index = mean_index, scoretype = scoretype, normalize_l2 = True, return_norm = True)
 
-                faiss.write_index(mean_index, mean_outfile)
-                if strat == "meansig":
-                    sigma_embeddings = np.array(embedding_dict['sequence_embeddings_sigma']).astype(np.float32) 
-                    # Scale sigmas by same amount as the mean
-                    sigma_embeddings = sigma_embeddings 
-                    sigma_index = build_index_flat(sigma_embeddings, index = sigma_index, scoretype = "euclidean", normalize_l2 = False, return_norm = False)
-                    faiss.write_index(sigma_index, sigma_outfile)
-
+                mean_index, sigma_index = add_to_index(embedding_dict, mean_index, mean_outfile, sigma_index, sigma_outfile, strat = strat, scoretype = scoretype) 
                 # print("{} added to index".format(fasta_path))
                 # Write mapping of sequence name o
                 for seq_name in chunk_seq_names:
