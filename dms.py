@@ -9,8 +9,9 @@ import torch
 import numpy as np
 from torch.multiprocessing import Pool
 from Bio import SeqIO
-from transformers import AutoModel, AutoTokenizer, BertConfig
+#from transformers import AutoModel, AutoTokenizer, BertConfig
 import copy
+from transformer_infrastructure.hf_embed import load_model
 #import line_profiler
 #profile = line_profiler.LineProfiler()
 #import atexit
@@ -199,16 +200,16 @@ def get_attn_data(model, tokenizer, tokens, min_attn = 0.1, start_index=0, end_i
     return(attns)
 
 #@profile
-def load_model(model_path):
-    '''
-    Takes path to huggingface model directory
-    Returns the model and the tokenizer
-    '''
-    print("load tokenizer")
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    print("load model")
-    model = AutoModel.from_pretrained(model_path, output_attentions=True)
-    return(model, tokenizer)
+#def load_model(model_path):
+#    '''
+#    Takes path to huggingface model directory
+#    Returns the model and the tokenizer
+#    '''
+#    print("load tokenizer")
+#    tokenizer = AutoTokenizer.from_pretrained(model_path)
+#    print("load model")
+#    model = AutoModel.from_pretrained(model_path, output_attentions=True)
+#    return(model, tokenizer)
 
 #@profile
 def get_attn_df(name, model, tokenizer, tokens, min_attn = 0.1, mut = None):

@@ -1901,41 +1901,14 @@ def dag_to_cluster_order(cluster_orders, seqs_aas, pos_to_clust_dag, clustid_to_
 
 @profile
 def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_clustering, seqsim_thresh = 0.75):
+
+
+
     numseqs = len(seqs)
+    sentence_array = np.array(embedding_dict['sequence_embeddings']).astype(np.float32)
 
-    
-    #hstates_list, sentence_embeddings = get_hidden_states(seqs, model, tokenizer, layers, return_sentence = True)
-    #logging.info("Hidden states complete")
-    #print("end hidden states")
+    G, s_index = get_seqsims(sentence_array, k = numseqs)
 
-    #if padding:
-    #    logging.info("Removing {} characters of neutral padding X".format(padding))
-    #    hstates_list = hstates_list[:,padding:-padding,:]
-
-    #padded_seqlen = embedding_dict['aa_embeddings'].shape[1]
-    #logging.info("Padded sequence length: {}".format(padded_seqlen))
-
-
-    #k_select = numseqs 
-    #sentence_array = np.array(embedding_dict['sequence_embeddings']) 
-
-    #print("sentnece array shape", sentence_array.shape)
-    #if sentence_array.shape[1] > 1024:
-    #   sentence_array = sentence_array[:,:1024]
-    #print(sentence_array.shape)
-
-    #print("sentence_array", sentence_array)
-    #s_index = build_index_flat(sentence_array)
-    #s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
-
-    #print(s_distance) 
-    #print(s_index2)
-    #G = graph_from_distindex(s_index2, s_distance, seqsim_thresh)
-    #print(G)
-    #G = G.simplify(combine_edges = "first")  # symmetrical, doesn't matter
-    #print(G)
-    #print("not excluding?", exclude)
-    G = get_seqsims(seqs, embedding_dict, seqsim_thresh = seqsim_thresh)
     to_exclude = []
 
    
@@ -1945,13 +1918,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
     cluster_seqs_list = []
    
 
-    # TODO use two variable names for spaced and unspaced seqs
     logging.info("Removing spaces from sequences")
-    #if padding:
-    #    seqs = [x.replace(" ", "")[padding:-padding] for x in seqs]
-    #else:
-    #    seqs = [x.replace(" ", "") for x in seqs]
-    #prev_to_exclude = []
     if do_clustering == True:
         #print("fastgreedy")
         #print(G)
@@ -2319,12 +2286,12 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
     if len(seqs) > 2:
         minclustsize = int(len(seqs)/2) + 1
         if len(clusters_list) == 0:
-            clusters_list, all_alternates_dict = first_clustering(G, betweenness_cutoff = 0.1, ignore_betweenness = False, apply_walktrap = False)
+            clusters_list, all_alternates_dict = first_clustering(G, betweenness_cutoff = 0.1, ignore_betweenness = False, apply_walktrap = True)
 
     else:
         minclustsize = 2
         if len(clusters_list) == 0:
-            clusters_list, all_alternates_dict = first_clustering(G, betweenness_cutoff = 1, ignore_betweenness = True, apply_walktrap = False)
+            clusters_list, all_alternates_dict = first_clustering(G, betweenness_cutoff = 1, ignore_betweenness = True, apply_walktrap = True)
 
     minclustsize = 3
 
@@ -3285,7 +3252,7 @@ if __name__ == '__main__':
    
     consolidator = "mafft"
     if consolidator == "mafft":
-      if len(cluster_names_list) > 1 and ( len(excluded_records) > 0 or fully_exclude == False ) :
+      if len(cluster_names_list) > 1 or ( len(excluded_records) > 0 or fully_exclude == False ) :
     
         seq_count = 1
     

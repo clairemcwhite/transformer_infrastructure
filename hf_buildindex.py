@@ -115,7 +115,7 @@ if __name__ == '__main__':
     headnorm = args.headnorm
     truncate = args.truncate
     strat = args.strat
-    minlength = arg.minlength
+    minlength = args.minlength
     scoretype = args.scoretype
     # Keep to demonstrate effect of clustering or not
  

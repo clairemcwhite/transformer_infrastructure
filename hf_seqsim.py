@@ -292,33 +292,36 @@ def seq_index_search(sentence_array, k_select, s_index = None):
     s_distance, s_index2 = s_index.search(sentence_array, k = k_select)
     return(s_distance, s_index2)
 
-def get_seqsims(sentence_array, k = None, s_index = None):
-
+def get_seqsims(sentence_array, k = None, sentence_index = None):
+    '''
+    Take numpy array (float32) [[],[]] and calculate k-nearest neighbors either among array or from precomputed index of arrays. 
+    
+    If k is not provided, returned sequences will be the length of the sentence array if no precomputed index provided, or number of vectors in the index if that is provided.
+    
+    Time to return additional k is negligable
+    
+    '''
     print("k", k)
-    if k:
-       k_select = k
-    else:
-       k_select = numseqs
+    if not k:
+       k = sentence_array.shape[0]
+
     start_time = time()
+
+    if not sentence_index:
+        sentence_index = build_index_flat(sentence_array)
 
     print("Searching index")
-    s_distance, s_index2 = seq_index_search(sentence_array, k_select, s_index)
+    distances, indices = seq_index_search(sentence_array, k, sentence_index)
     
-    #s_distance = (2-s_distance)/2
 
     end_time = time()
-    print("Index searched for {} sequences in {} seconds".format(numseqs, end_time - start_time))
-    #if s_sigma_index:
-    #print("get_seqsims:s_index2:",s_index2) 
-        
-
+    print("Index searched in {} seconds".format( end_time - start_time))
     
-    #else:
     start_time = time()
-    G = graph_from_distindex(s_index2, s_distance)
+    G = graph_from_distindex(indices, distances)
     end_time = time()
     print("Index converted to edges in {} seconds".format(end_time - start_time))
-    return(G)
+    return(G, sentence_index)
 
 
 def get_seqsim_args():
@@ -431,6 +434,8 @@ if __name__ == '__main__':
     k = args.k
     strat = args.strat 
     scoretype = args.scoretype
+    s_index = None
+    s_sigma_index = None
     # Keep to demonstrate effect of clustering or not
     #do_clust   return(ovl)ering = True
  
@@ -511,7 +516,7 @@ if __name__ == '__main__':
                 s_sigma_index = faiss.read_index(index_file_sigmas)
             else:
                 s_sigma_index = None
-                s_sigma_embeddings = np.array(embedding_dict['sequence_embeddings_sigma']).astype(np.float32)
+                sigma_embeddings = np.array(embedding_dict['sequence_embeddings_sigma']).astype(np.float32)
                 s_sigma_index = build_index_flat(sigma_embeddings, s_sigma_index)
 
          end_time = time()
@@ -519,16 +524,18 @@ if __name__ == '__main__':
          print("Loaded index(es) in {} seconds".format(end_time - start_time))
 
     else:
-         s_index = None
-         s_sigma_index = None
-         index_names = seq_names
+         if strat == "meansig":
+            s_sigma_index = None
+            sigma_embeddings = np.array(embedding_dict['sequence_embeddings_sigma']).astype(np.float32)
+            s_sigma_index = build_index_flat(sigma_embeddings, s_sigma_index)
+            index_names = seq_names
             
     #kl = tf.keras.losses.KLDivergence()
     # Step 1: Use means to get local area of sequences
     sentence_array = np.array(embedding_dict['sequence_embeddings']).astype(np.float32) 
     if not k:
        k = len(seqs)
-    G = get_seqsims(sentence_array, k = k, s_index = s_index)
+    G, s_index = get_seqsims(sentence_array, k = k, sentence_index = s_index)
 
     print("similarities made", time() - true_start)
     print(outfile)
@@ -701,7 +708,7 @@ if __name__ == '__main__':
            #print(source,target,weight,cosinesim,w2_out, ovl)
 
            #o.write("{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.10f},{},{},{}\n".format(source, target, weight, ovl, kl_out, w2_out, w2_vect, euc_mean, euc_sigma, nb_w2_vect))   
-           o.write("{},{},{:.5f},{:.5f},{:.5f},{:.5f},{:.5f}\n".format(source,target,weight,cosinesim,w2_out,w2_e_out,w2_ediv_out))
+           o.write("{},{},{:.5f},{:.5f},{:.8f},{:.8f},{:.8f}\n".format(source,target,weight,cosinesim,w2_out,w2_e_out,w2_ediv_out))
     e_span = time() - e_start
     print("second similarty taken in {} seconds".format(e_span))
     print("outfile made", time() - true_start)
