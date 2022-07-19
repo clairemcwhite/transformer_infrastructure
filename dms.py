@@ -8,8 +8,8 @@ import time
 import torch
 import numpy as np
 from torch.multiprocessing import Pool
-rom Bio import SeqIO
-f#from transformers import AutoModel, AutoTokenizer, BertConfig
+from Bio import SeqIO
+#from transformers import AutoModel, AutoTokenizer, BertConfig
 import copy
 from transformer_infrastructure.hf_embed import load_model
 from transformers import BertConfig
