@@ -8,10 +8,12 @@ import time
 import torch
 import numpy as np
 from torch.multiprocessing import Pool
-from Bio import SeqIO
-#from transformers import AutoModel, AutoTokenizer, BertConfig
+rom Bio import SeqIO
+f#from transformers import AutoModel, AutoTokenizer, BertConfig
 import copy
 from transformer_infrastructure.hf_embed import load_model
+from transformers import BertConfig
+#from transformers import AutoTokenizer, AutoModel, T5Tokenizer, T5EncoderModel
 #import line_profiler
 #profile = line_profiler.LineProfiler()
 #import atexit
