@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, AutoModel, T5Tokenizer, T5EncoderModel
+from transformers import AutoTokenizer, AutoModel, AutoConfig, T5Tokenizer, T5EncoderModel
 
 
 from transformer_infrastructure.pca_embeddings import control_pca, load_pcamatrix, apply_pca
@@ -238,10 +238,10 @@ def split_hidden_states(hidden_states, head_len = 64, aa_dim = 0 ):
 
     return(hstates_split, head_ids)
 
-def retrieve_aa_embeddings(model_output, layers = None, padding = 0, heads = None):
+def retrieve_aa_embeddings(model_output, model_type, layers = None, padding = 0, heads = None):
     '''
     Get the amino acid embeddings for each sequences
-    Pool layers by concatenating selection of layers
+    Pool layers by concatenating selection of layers OR selection of heads
     Return shape: (numseqs, length of longest sequence, 1024*numlayers)
     If adding padding, it's usually 5. 
 
@@ -285,53 +285,78 @@ def retrieve_aa_embeddings(model_output, layers = None, padding = 0, heads = Non
         aa_embeddings = torch.from_numpy(aa_embeddings)
         #aa_embeddings = torch.cat(tuple([aa_embeddings_split[i] for i in head_indices]), dim = -1)
 
-    #print("pre", aa_embeddings.shape)
-    if padding > 0:
-        # to remove CLS + XXXXX + XXXXX + SEP
-        trim = 1 + padding
+    if model_type == "bert":
+      front_trim = 1 + padding
+      end_trim = 1 + padding
+    elif model_type == "t5":
+      front_trim = 0 + padding
+      end_trim = 1 + padding
     else:
-         # to remove CLS + SEP 
-         trim = 1
-    aa_embeddings = aa_embeddings[:,trim:-trim,:]
+       print("Model type required to extract aas. Currently supported bert and t5")
+       return(0)
+
+    #print("pre", aa_embeddings.shape)
+    #if padding > 0:
+    #    # to remove CLS + XXXXX + XXXXX + SEP
+    #    trim = 1 + padding
+    #else:
+    #     # to remove CLS + SEP 
+    #     trim = 1
+    aa_embeddings = aa_embeddings[:,front_trim:-end_trim,:]
     #print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
 
     return(aa_embeddings, aa_embeddings.shape)
 
 
-def retrieve_sequence_embeddings(model_output, encoded):
-   
-    ''' 
-    UNUSED
-    Get a sequence embedding by taking the mean of all final layer amino acid embeddings
-    Return shape (numseqs x 1024)
-    '''
-    print("encoded", encoded['attention_mask'])
-    sentence_embeddings = mean_pooling(model_output, encoded['attention_mask'])
-    print('sentence_embeddings.shape: {}'.format(sentence_embeddings.shape))
-    return(sentence_embeddings)
+#def retrieve_sequence_embeddings(model_output, encoded):
+#   
+#    ''' 
+#    UNUSED
+#    Get a sequence embedding by taking the mean of all final layer amino acid embeddings
+#    Return shape (numseqs x 1024)
+#    '''
+#    print("encoded", encoded['attention_mask'])
+#    sentence_embeddings = mean_pooling(model_output, encoded['attention_mask'])
+#    print('sentence_embeddings.shape: {}'.format(sentence_embeddings.shape))
+#    return(sentence_embeddings)
 
 
-def load_model(model_path):
+def load_model(model_path, output_hidden_states = True, output_attentions = False, half = False, return_config = False):
     '''
     Takes path to huggingface model directory
-    Returns the model and the tokenizer
+    Returns the model and the tokenizer, and optionally the model config
+    output_hidden_states
+    output_attentions=False
+    
     '''
+    model_config = AutoConfig.from_pretrained(model_path)
+    model_type = model_config.model_type
+    print("This is a {} model".format(model_type))
+
     print("load tokenizer")
     print("load_model:model_path", model_path)
-    if "bert" in model_path:
-        print("Bert model")
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-        model = AutoModel.from_pretrained(model_path, output_hidden_states=True)
-    if "t5" in model_path:
+
+    if model_type == "t5":
         print("T5 model")
         tokenizer = T5Tokenizer.from_pretrained(model_path)
-        model = T5EncoderModel.from_pretrained(model_path, output_hidden_states=True)
-        #model.half() # Put model in half precision mode for faster embedding
+        model = T5EncoderModel.from_pretrained(model_path, 
+                       output_hidden_states=output_hidden_states, 
+                       output_attentions = output_attentions)
+
     else:
         print("Automodel")
         tokenizer = AutoTokenizer.from_pretrained(model_path)
-        model = AutoModel.from_pretrained(model_path, output_hidden_states=True)
-    return(model, tokenizer)
+        model = AutoModel.from_pretrained(model_path, 
+                       output_hidden_states=output_hidden_states, 
+                       output_attentions = output_attentions)
+
+    if half == True:
+        model.half() # Put model in half precision mode for faster embedding
+
+    if return_config == True:
+       return(model, tokenizer, model_config)
+    else:
+       return(model, tokenizer)
 
 # ? 
 class Collate:
@@ -389,10 +414,10 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
        ak.numba.register()
     print("CUDA available?", torch.cuda.is_available())
 
-    model, tokenizer = load_model(model_path)
+    model, tokenizer, model_config = load_model(model_path, return_config = True)
+    model_type = model_config.model_type
+    print("This is a {} model".format(model_type))
     print("Model loaded")
-    #print("seqs", seqs)
-    #print(seqlens)
     aa_shapes = [] 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device", device) 
@@ -473,7 +498,7 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                 sequence_array_list.append(sequence_embeddings)
 
             else: #  get_aa_embeddings == True:
-                aa_embeddings, aa_shape = retrieve_aa_embeddings(model_output, layers = layers, heads = heads, padding = padding)
+                aa_embeddings, aa_shape = retrieve_aa_embeddings(model_output, model_type = model_type, layers = layers, heads = heads, padding = padding)
                 aa_embeddings = aa_embeddings.to('cpu')
                 aa_embeddings = np.array(aa_embeddings)
                 
