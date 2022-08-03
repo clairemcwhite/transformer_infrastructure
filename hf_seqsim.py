@@ -466,6 +466,7 @@ if __name__ == '__main__':
     logging.info("padding: {}".format(padding))
 
     faiss.omp_set_num_threads(10) 
+    print("MINLENGTH", minlength)
     if minlength:
       seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, padding = padding, minlength = minlength)
     else:

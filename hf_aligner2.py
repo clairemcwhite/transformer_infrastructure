@@ -10,6 +10,9 @@ from transformer_infrastructure.run_tests import run_tests
 from transformer_infrastructure.hf_embed import parse_fasta_for_embed, get_embeddings 
 from transformer_infrastructure.hf_seqsim import get_seqsims
 
+# This is combat with patsy requirement removed
+from transformer_infrastructure.combat2 import combat
+
 import line_profiler
 import atexit
 profile = line_profiler.LineProfiler()
@@ -38,6 +41,15 @@ import matplotlib.pyplot as plt
 import logging
 
 from sklearn.metrics.pairwise import cosine_similarity
+
+#class Config:
+#    def __init__(self):
+#       self.input_fasta = ""
+#       self.seqnames = ""
+#       self.seqsimthresh = ""
+#       self.model_name = ""
+
+
 
 class AA:
    
@@ -1944,14 +1956,23 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
                   if G.vs[edge.source]["name"] not in to_exclude:
                      if edge['weight'] >= seqsim_thresh:
                          #if edge.source != edge.target:
-                             print("seqsim: ",G.vs[edge.source]["name"], G.vs[edge.target]["name"], edge['weight'])
-                             edgelist.append([ G.vs[edge.source]["name"], G.vs[edge.target]["name"]])
-                             weightlist.append(edge['weight'])
+                             source = G.vs[edge.source]["name"]
+                             target = G.vs[edge.target]["name"]
+                        
+ 
+ 
+                             length_diff_correction = 1 - abs(0.5 - len(seqs[source]) / (len(seqs[source]) + len(seqs[target])))
+                             corrected_weight = edge['weight'] * length_diff_correction
+                             print("seqsim: ", source,target, edge['weight'], "l1, l2", len(seqs[source]), len(seqs[target]), corrected_weight)
+                             if corrected_weight >= seqsim_thresh:
+                             
+                                 edgelist.append([ source, target ])
+                                 weightlist.append(corrected_weight)
         # Rebuild G
         G = igraph.Graph.TupleList(edges=edgelist, directed=False)
         G.es['weight'] = weightlist
 
-        #G = G.simplify()
+        G = G.simplify(combine_edges=max)
         print("G", G)
         #seq_clusters = G.community_multilevel(weights = 'weight')
         ## The issue with walktrap is that the seq sim graph is near fully connected
@@ -2116,8 +2137,6 @@ def dedup_clusters(clusters_list, G, minclustsize):
 def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, minscore1 = 0.5, alignment_group = 0, headnorm = False):
     """
     Control for running whole alignment process
-    seqs should be spaced
-    model = prot_bert_bfd
     """
 
     seqlens = [len(x) for x in seqs]
@@ -2205,39 +2224,66 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
 
 
     # Remove maxlen padding from aa embeddings
+    print(hidden_states.shape)
+
     hidden_states = np.take(hidden_states, list(index_to_aa.keys()), 0)
+    print(hidden_states.shape)
 
     index_to_aa = {}
     count_index = 0
+    batch_list = []
     for i in range(len(seqs_aas)):
        for j in range(0, seqlens[i]):
+           batch_list.append(i)
            aa = seqs_aas[i][j]
            aa.index = count_index
            aa.seqindex = i
            index_to_aa[count_index] = aa
            count_index = count_index + 1
-           
-    
+    print(index_to_aa)           
+        
     logging.info("Build index of amino acid embeddings")     
-
+    print(batch_list)
     # TODO: Add check for when voronoi is needed
     #index= build_index_voronoi(hidden_states, seqlens)
     #print("ncells", int(max(seqlens)/10))
     #index.nprobe =  int(max(seqlens)/10)
     #index.nprobe = 3
+    # Try batch correctiont
+    hidden_states_pd = pd.DataFrame(hidden_states.T) # So that each aa in a column
+    print(hidden_states_pd)
 
+    batch_series = pd.Series(batch_list)
+    levels = list(range(len(seqs_aas)))
+    design_list = [(batch_series == level) * 1 for level in levels]
+    design = pd.concat(design_list, axis = 1)
+    hidden_states_batch = combat(hidden_states_pd, batch_list, design)
+    print(hidden_states_batch)
+    hidden_states = np.array(hidden_states_batch).T.astype(np.float32) 
+   
+
+ 
     faiss.normalize_L2(hidden_states)
-    index= build_index_flat(hidden_states, scoretype = "cosinesim")
+    index= build_index_flat(hidden_states, scoretype = "cosinesim", normalize_l2 = False) # Already normalized
     logging.info("Index built") 
 
     # Get KNN of eac amino acid
     D1, I1 =  index.search(hidden_states, k = numseqs*20) 
 
+    
+    print(D1[1].tolist())
+    print(I1[1].tolist())
+
+    print(D1[63].tolist())
+    print(I1[63].tolist())
     #test1_I, test1_D = index.search(hidden_states[3], k = 50)
    
     logging.info("KNN done")
+    
     I2 = split_distances_to_sequence2(D1, I1, index_to_aa, numseqs, seqlens) 
     # I2 is a dictionary of dictionaries of each aa1: {aa1:1.0, aa2:0.8}
+
+    print(I2)
     logging.info("Split results into proteins done")
 
     logging.info("get best hitlist")
@@ -3089,7 +3135,18 @@ if __name__ == '__main__':
     # Keep to demonstrate effect of clustering or not
     do_clustering = True
  
-    logname = "align.log"
+    outfile_path =  os.path.dirname(outfile) # get place to store output file
+    outfile_name =   os.path.splitext(os.path.basename(outfile))[0] # get outfile without extension
+    if outfile_path:
+       record_dir = "{}/alignment_files_{}".format(outfile_path,outfile_name)
+    else:
+       record_dir = "alignment_files_{}".format(outfile_name)
+    if os.path.exists(record_dir):
+        os.rmdir(record_dir)
+    os.mkdir(record_dir)
+
+
+    logname = "{}/{}.align.log".format(record_dir, outfile_name)
     #print("logging at ", logname)
     log_format = "%(asctime)s::%(levelname)s::"\
              "%(filename)s::%(lineno)d::%(message)s"
@@ -3113,7 +3170,11 @@ if __name__ == '__main__':
     logging.info("Check for torch")
     logging.info(torch.cuda.is_available())
 
-    padding = 0
+    # Padding value Very important for this one
+    # Glyco_hydro_18_D2.vie.3seqs.fasta
+    # padding = 5 or 9 does NOT work
+    # padding = 10 and 11 does
+    padding = 10
     minscore1 = 0.5
 
     logging.info("model: {}".format(model_name))
@@ -3156,8 +3217,9 @@ if __name__ == '__main__':
          # Option to keep poor matches out
          if fully_exclude != True:
             aln_fasta_list.append([">{}\n{}\n".format(seq_names[excluded_seqnum], seqs[excluded_seqnum])])
+   
 
-    with open("excluded.fasta", "w") as output_handle:
+    with open("{}/{}.excluded.fasta".format(record_dir, outfile_name), "w") as output_handle:
         SeqIO.write(excluded_records, output_handle, "fasta")
 
     alignments = []
@@ -3175,7 +3237,7 @@ if __name__ == '__main__':
         group_embeddings = cluster_hstates_list[i] 
         print("group seqnames", group_names, group_seqnums)
 
-        group_seqs_out = "alignment_group{}.fasta".format(i)
+        group_seqs_out = "{}/{}.alignment_group{}.fasta".format(record_dir, outfile_name, i)
         group_records = []
 
         for j in range(len(group_seqs)):
@@ -3213,7 +3275,7 @@ if __name__ == '__main__':
             # Need clustid_to_clust
             
             if pca_plot: 
-                png_align_out = "alignment_group{}.fasta.png".format(i)
+                png_align_out = "{}/{}.alignment_group{}.fasta.png".format(record_dir, outfile_name,  i)
                 do_pca_plot(hidden_states, index_to_aa, clustid_to_clust, outfile)
     
     
@@ -3230,20 +3292,20 @@ if __name__ == '__main__':
             
     
     
-            fasta_align_out = "alignment_group{}.fasta.aln".format(i)
+            fasta_align_out = "{}/{}.alignment_group{}.fasta.aln".format(record_dir, outfile_name, i)
             fasta_align_i = alignments_i[1]
             with open(fasta_align_out, "w") as o:
                   o.write(fasta_align_i)
     
-            clustal_align_out = "alignment_group{}.clustal.aln".format(i)
+            clustal_align_out = "{}/{}.alignment_group{}.clustal.aln".format(record_dir, outfile_name, i)
             clustal_align_i = alignments_i[0]
             with open(clustal_align_out, "w") as o:
                   o.write(clustal_align_i)
             # If nothing to merge
-            if len(cluster_names_list) == 1 and ( len(excluded_records) == 0 or fully_exclude == True ) :
+            if len(cluster_names_list) == 1 and (( len(excluded_records) == 0 or fully_exclude == True )) :
                 with open(outfile, "w") as o:
                       o.write(clustal_align_i)
-                #sys.exit()
+                sys.exit()
            
          
 
@@ -3258,9 +3320,9 @@ if __name__ == '__main__':
     
         
 
-        with open("all_fastas_aln.fasta", "w") as o:
+        with open("{}/{}.all_fastas_aln.fasta".format(record_dir, outfile_name,), "w") as o:
     
-            with open("key_table.txt", "w") as tb:
+            with open("{}/{}.key_table.txt".format(record_dir, outfile_name), "w") as tb:
                 for k in range(len(aln_fasta_list)):
                   
                    for s in range(len(aln_fasta_list[k])):
@@ -3274,7 +3336,7 @@ if __name__ == '__main__':
         try:
             
             #os.system("mafft --clustalout --merge key_table.txt --auto all_fastas_aln.fasta > {}".format(outfile))
-            os.system("singularity exec /scratch/gpfs/cmcwhite/mafft_7.475.sif mafft --clustalout --merge key_table.txt --auto all_fastas_aln.fasta > {}".format(outfile))
+            os.system("singularity exec /scratch/gpfs/cmcwhite/mafft_7.475.sif mafft --clustalout --merge {}/{}.key_table.txt --auto {}/{}.all_fastas_aln.fasta > {}".format(record_dir, outfile_name, record_dir, outfile_name, outfile))
                
             os.system("cat {}".format(outfile))
         except Exception as E:

@@ -100,8 +100,8 @@ def compare_attn_networks(g1list, g2list, summary = True):
            outdict[layer_head] = 0
            continue
         else:
-           g1 = g1list[layer_head]
-           g2 = g2list[layer_head]
+           g1 = g1list[layer_head].simplify(combine_edges = max)
+           g2 = g2list[layer_head].simplify(combine_edges = max)
         nodes1 = g1.vcount()
         nodes2 = g2.vcount()
         edges1 = g1.ecount()
@@ -130,14 +130,22 @@ def compare_attn_networks(g1list, g2list, summary = True):
         
         #print("shared_nodes, shared_edges, nodes1, nodes2, edges1, edges2, distinct_edges1, distinct_edges2, distinct_weight_g1, distinct_weight_g2, total_weight_g1, total_weight_g2") 
         #print(inter.vcount(), inter.ecount(), nodes1, nodes2, edges1, edges2, distinct_edges1, distinct_edges2, distinct_weight_g1, distinct_weight_g2, total_weight_g1, total_weight_g2) 
+
         if summary == False:
             outlist.append([nodes1, nodes2, edges1, edges2, distinct_edges1, distinct_edges2, distinct_weight_g1, distinct_weight_g2, total_weight_g1, total_weight_g2])
         else:
+
+            #print("STATS", inter.vcount(), inter.ecount(), nodes1, nodes2, edges1, edges2)
+            
             #score = ( 2 * inter.vcount() + inter.ecount()) / (nodes1 + nodes2 + edges1 + edges2)
             #print("node/edge overlap  :", score)
             #score = (inter.ecount() / min(edges1, edges2))
             #print("Overlap Coefficient:", score)
-            score = (inter.ecount() / (edges1 + edges2 - inter.ecount()))
+            if edges1 +  edges2 ==0:
+              score = 1
+            else:
+              score = (inter.ecount() / (edges1 + edges2 - inter.ecount()))
+
             #print("Jaccard Coefficient:", score)
 
             outdict[layer_head] = score
@@ -195,7 +203,7 @@ def get_attn_data(model, tokenizer, tokens, model_type, min_attn = 0.1, start_in
         # Remove attention from <CLS> (first) and <SEP> (last) token
         attns = [attn[:, :, 1:-1, 1:-1] for attn in attns]
     if model_type == "t5":
-        # T5 models don't have the classifier token
+        # T5 models don't have the classifier <CLS> token
         attns = [attn[:, :, :-1, :-1] for attn in attns]
 
     attns = torch.stack([attn.squeeze(0) for attn in attns]).cpu()
@@ -254,8 +262,10 @@ def wrap_attns(attns, tokens, min_attn):
 def get_score_dict(mutation, tokens, model, tokenizer, model_type, glist_wt, min_attn):
                 print(mutation) 
                 tokens_for_mut = copy.deepcopy(tokens) # Necessary 
+               
                 df_mut_attns = get_attn_df(model, tokenizer, tokens_for_mut, model_type = model_type, min_attn = min_attn, mut = mutation)
                 glist_mut, group_names = attndf_to_graphlist(df_mut_attns)
+                
                 score_dict = compare_attn_networks(glist_wt, glist_mut)
                 score_dict['mutation']  = mutation    
                 return(score_dict)
@@ -332,21 +342,16 @@ if __name__ == "__main__":
            
             glist_wt, group_names = attndf_to_graphlist(df_wt_attns)
             ## ['sp|Q92781|RDH5_HUMAN-30-16', 30, 16, 'I', 198, 'G', 156, 0.10365235060453415]i
-            #df_wt_attns = pd.DataFrame.from_records(outlist_wt, columns=['ProteinID', 'layer', 'head', 'res1', 'pos1', 'res2', 'pos2', 'attention'])
-
-            #outtable_wt = []
-            #for layer, head, token1, pos1, token2, pos2, attn in outlist_wt:
-            #    outtable_wt.append([layer, head, "-".join([token1, str(pos1)]), "-".join([token2, str(pos2)]), attn])
-            #df_wt_attns = pd.DataFrame.from_records(outtable_wt, columns=['layer', 'head', 'res1', 'res2', 'attention'])               
-            #print(glist_wt[0:5] )
             name = str(record.id)
 #mutation, tokens, name, model, tokenizer, glist_wt, min_attn):
+
             scoredict_partial = partial(get_score_dict, tokens = tokens, model = model, tokenizer= tokenizer, model_type = model_type, glist_wt = glist_wt, min_attn = min_attn)
             with Pool(processes = num_processes) as pool:
                 list_of_scoredicts = pool.map(scoredict_partial, mutlist)
-            #print(list_of_scoredicts)
+
             #for mutation in mutlist:
-            #    score_dict = get_score_dict(mutation, tokens, name, model, tokenizer, glist_wt, min_attn = min_attn)
+            #    score_dict = get_score_dict(mutation, tokens, model, tokenizer, model_type, glist_wt, min_attn = min_attn)
+            #    print(score_dict)
             #    list_of_scoredicts.append(score_dict)
             
             
@@ -364,7 +369,7 @@ if __name__ == "__main__":
             column_order = ['proteinID', 'mutation'] + observed_heads
             scores_tbl= scores_tbl[column_order]
             print(scores_tbl)
-            scores_tbl.to_csv(attn_outfile, index = False, float_format='%.3f')
+            scores_tbl.to_csv(attn_outfile, index = False, float_format='%.5f')
                        
 
 

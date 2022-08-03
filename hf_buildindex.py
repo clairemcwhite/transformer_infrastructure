@@ -54,7 +54,7 @@ def get_index_args():
     
     parser.add_argument("-e", "--emb", dest = "embedding_path", type = str, required = False,
                         help="Path to embeddings")
-    parser.add_argument("-ml", "--minlength", dest = "minlength", type = int, required = False, default = 140,
+    parser.add_argument("-ml", "--minlength", dest = "minlength", type = int, required = False,
                         help="Minimum length of sequences to add to the index")
 
     parser.add_argument("-b", "--base_outfile", dest = "base_outfile", type = str, required = True,
@@ -161,8 +161,11 @@ if __name__ == '__main__':
 
 
         for fasta_path in fasta_paths: 
-        
-            seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, truncate = truncate, padding = padding, minlength=minlength)
+            if minlength: 
+                seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, truncate = truncate, padding = padding, minlength=minlength)
+
+            else:
+                seq_names, seqs, seqs_spaced = parse_fasta_for_embed(fasta_path, truncate = truncate, padding = padding)
             print("Sequences loaded") 
             #avoid loading too many sequences into memory
 

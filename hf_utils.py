@@ -95,7 +95,7 @@ def get_sequencelabel_tags(labels):
 
 
 ### Similarity
-def build_index_flat(hidden_states, scoretype = "cosinesim", index = None,  normalize_l2 = True, return_norm = False):
+def build_index_flat(hidden_states, scoretype = "cosinesim", index = None,  normalize_l2 = True):
 
 
     if not index:
@@ -121,11 +121,10 @@ def build_index_flat(hidden_states, scoretype = "cosinesim", index = None,  norm
 
     index.add(hidden_states)
 
-    if return_norm == True:
-       return(index, norm)
+    #if return_norm == True:
+    #   return(index, norm)
 
-    if return_norm == False:
-       return(index)
+    return(index)
 
 def build_index_voronoi(hidden_states, seqlens):
 
