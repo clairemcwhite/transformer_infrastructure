@@ -25,8 +25,8 @@ def get_attn_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--fasta", dest = "fasta_path", type = str, required = True,
                         help="Fasta file")
-    parser.add_argument("-n", "--num_processes", dest = "num_processes", type = int, required = False, default= 10,
-                        help="Number of threads, default: 10")
+    parser.add_argument("-n", "--num_processes", dest = "num_processes", type = int, required = False, default= 5,
+                        help="Number of threads, default: 5")
 
     parser.add_argument("-ma", "--min_attn", dest = "min_attn", type = float, required = False, default= 0.1,
                         help="Minimum attention to plot, default: 0.1")

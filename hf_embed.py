@@ -504,6 +504,7 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                 
                 if get_sequence_embeddings == True:
                      # Get sentence embeddings by averaging aa embeddings
+                     # Note that this includes padding characters in the mean
                      sequence_embeddings = np.mean(aa_embeddings, axis = 1)
 
                      if strat == "meansig":

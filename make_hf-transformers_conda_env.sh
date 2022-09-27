@@ -9,7 +9,7 @@ conda create --name hf-transformers2 -c conda-forge -c pytorch transformers pyto
 
 
 
-conda create --prefix /scratch/gpfs/cmcwhite/base_utils -c conda-forge numpy=1.21.2 pandas biopython rpy2 numba matplotlib scikit-learn r-igraph python-igraph numba r-dendextend r-dplyr
+conda create --prefix /scratch/gpfs/cmcwhite/base_utils -c conda-forge numpy=1.21.2 pandas biopython rpy2 numba matplotlib scikit-learn r-igraph python-igraph numba r-dendextend r-dplyr icecream
 
 #conda create --name hf-transformers -c conda-forge -c pytorch transformers pytorch::pytorch pandas numpy=1.21.2 biopython faiss seqeval cudatoolkit=11.1 python-igraph matplotlib sentence-transformers  pytorch-lightning  torchmetrics huggingface_hub numba
 
