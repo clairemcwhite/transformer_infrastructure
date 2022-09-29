@@ -175,11 +175,13 @@ def remove_maxlen_padding(hidden_states, seqs_aas, padded_seqlen):
     # Initial index to remove maxlen padding from input embeddings
     index_to_aa = {}
     aa_indices = []
+    ic(seqs_aas)
+    seqlens = [len(x) for x in seqs_aas]
     for i in range(len(seqs_aas)):
         for j in range(padded_seqlen):
            if j >= seqlens[i]:
              continue 
-           
+           print(i, j) 
            aa = seqs_aas[i][j]
            index_num = i * padded_seqlen + j
            index_to_aa[index_num] = aa
@@ -2059,7 +2061,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
 
     aa_embeddings = embedding_dict['aa_embeddings'] # this is numseqs x padded_seqlen x embedding_dim
     padded_seqlen = aa_embeddings.shape[1]
-    ic(aa_embeddings.shape)
+    #ic(aa_embeddings.shape)
 
 
     logging.info("Flattening hidden states list")
@@ -2069,8 +2071,8 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
     ic(seqnums)
     seqs_aas, seq_to_length = get_seqs_aas(seqs, seqnums)
     index_to_aa, hidden_states, seqnum_to_index, batch_list = remove_maxlen_padding(hidden_states, seqs_aas, padded_seqlen)
-    ic(seqnum_to_index)
-    ic(batch_list)
+    #ic(seqnum_to_index)
+    #ic(batch_list)
     # Hidden_states is now all seqlens * embedding_dim
     pca_plot = True 
     if pca_plot:
@@ -2080,7 +2082,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
     no_batch_correct = False
     if not no_batch_correct:
       
-        ic( list(range(len(seqs_aas)))) 
+        #ic( list(range(len(seqs_aas)))) 
         hidden_states = do_batch_correct(hidden_states, list(range(len(seqs_aas))), batch_list)
            
         if pca_plot:
@@ -2090,15 +2092,18 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
 
     # Get 
     sequence_embedding_list = []
+    aa_embedding_list = []
     for i in range(len(seqs_aas)):
           seq_indices = seqnum_to_index[i]
           seq_i_aa_embeddings = np.take(hidden_states, seq_indices, axis = 0)
+          aa_embedding_list.append(seq_i_aa_embeddings)
           #ic(seq_i_aa_embeddings.shape)
           seq_i_seq_embedding = np.mean(seq_i_aa_embeddings, axis = 0)
           #ic(seq_i_seq_embedding.shape)
           sequence_embedding_list.append(seq_i_seq_embedding)
+
     sequence_array = np.array(sequence_embedding_list)
-    ic(sequence_array.shape)
+    #ic(sequence_array.shape)
     #sequence_array = np.mean(hidden_states_list, axis = 1)
 
     #else: 
@@ -2151,7 +2156,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
  
                              length_diff_correction = 1 - abs(0.5 - len(seqs[source]) / (len(seqs[source]) + len(seqs[target])))
                              corrected_weight = edge['weight'] * length_diff_correction
-                             ic("seqsim: ", source,target, edge['weight'], "l1, l2", len(seqs[source]), len(seqs[target]), corrected_weight)
+                             print("seqsim: ", source,target, edge['weight'], "l1, l2", len(seqs[source]), len(seqs[target]), corrected_weight)
                              if corrected_weight >= seqsim_thresh:
                              
                                  edgelist.append([ source, target ])
@@ -3178,7 +3183,6 @@ def  do_pca_plot(hidden_states, index_to_aa, outfile, clustid_to_clust = None, s
 
         #filter down the hidden states, TODO
 
-        
         seqnums = list(set([x.seqnum for x in index_to_aa.values()])) 
         ic("seqnums", seqnums)
         if clustid_to_clust:
@@ -3244,13 +3248,13 @@ def  do_pca_plot(hidden_states, index_to_aa, outfile, clustid_to_clust = None, s
            
                   color = clustid_to_color[clustid]
                   labellist.append(clustid)
-              elif seqlens:
+              else:
                   color = seqnum_to_color[aa.seqnum]
                   labellist.append(aa.seqnum)
                   
-              else:
-                  color = "blue"
-                  labellist.append(0)
+              #else:
+              #    color = "blue"
+              #    labellist.append(0)
              #ic(color)
               colorlist.append(color)
         label_arr = np.array(labellist)

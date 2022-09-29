@@ -49,19 +49,23 @@ def format_sequence(sequence, add_spaces = True):
 
    return seq_spaced
 
-def parse_fasta(fasta_path, sequence_out = "", add_spaces = True):
+def parse_fasta(fasta_path, sequence_out = "", add_spaces = True, maxlength=None):
 
    sequences = []
    with open(sequence_out, "w") as outfile:
 
        for record in SeqIO.parse(fasta_path, "fasta"):
-            seq_spaced = format_sequence(record.seq, add_spaces)
+            if maxlength:
+                sequence = record.seq[0:maxlength]
+            else:
+                sequence = record.seq
+            seq_spaced = format_sequence(sequence, add_spaces)
             
             if sequence_out:
                 outstring = "{},{}\n".format(record.id, seq_spaced)
                 outfile.write(outstring)
 
-            sequences.append([record.id, record.seq, seq_spaced])
+            sequences.append([record.id, sequence, seq_spaced])
    
    return(sequences)
 

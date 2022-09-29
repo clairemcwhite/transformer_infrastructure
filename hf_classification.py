@@ -125,6 +125,7 @@ def setup_trainer(epochs, train_batchsize, val_batchsize, outdir, expname):
         do_train=True,                   # Perform training
         do_eval=True,                    # Perform evaluation
         evaluation_strategy="epoch",     # evalute after each epoch
+        save_strategy="epoch",
         gradient_accumulation_steps=32,  # total number of steps before back propagation
         #fp16=True,                       # Use mixed precision
         #fp16_opt_level="02",             # mixed precision mode
@@ -164,7 +165,7 @@ if __name__ == "__main__":
 
     expname = args.expname
     outdir = args.outdir
-    logname = outdir + expname + "_" + model_name.strip("/") + ".log"
+    logname = outdir + expname + "_" + model_name.strip("/").split("/")[-1] + ".log"
     print("logging at ", logname)
     logging.basicConfig(filename=logname, level='DEBUG', format=log_format)
 

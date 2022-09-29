@@ -29,7 +29,8 @@ def get_interpret_args():
                         help="For single sequences, output an attrib coloring file for chimera, .defattr suffix suggested")
     parser.add_argument("-l", "--labels", dest = "labels", type = str, required = False,
                         help="csv of labels, (id,sequence,label) for annotating. Optional.")
-
+    parser.add_argument("-ml", "--maxlength", dest = "maxlength", type = int, required = False,
+                        help="Truncate sequences to this length. Optional.")
     args = parser.parse_args()
     return(args)
 
@@ -77,13 +78,16 @@ if __name__ == "__main__":
 
     args = get_interpret_args()
     model_name = args.model_path
-
+    maxlength = args.maxlength
     explainer = get_explainer(model_name)
 
 
     if args.sequence:
+       sequence = args.sequence
        # This needs to be fixed
-       sequence = format_sequence(args.sequence, add_spaces = True)
+       if maxlength: 
+           sequence = sequence[0:maxlength]
+       sequence = format_sequence(sequence, add_spaces = True)
        print(sequence)
 
 
@@ -97,7 +101,12 @@ if __name__ == "__main__":
        print("pred_index", pred_index)
        print("pred_prob", pred_prob)
        print("pred_name", pred_name)
-       df = pd.DataFrame.from_records(word_attributions, columns = ['aa', 'contribution'])
+       print(word_attributions)
+       info =  list(zip(aas.split(" "), word_attributions.split(" ")))
+       print(info)
+       df = pd.DataFrame.from_records(info, columns = ['aa', 'contribution'])
+       #df = pd.DataFrame.from_records(info, columns = ['pred_prob', 'pred_name', 'pred_index', 'word_attributions', 'aas', 'pos'])
+       print(df)
        df['aa_position'] = np.arange(1, len(df) + 1)
        print(df)
        if args.attribfile:
@@ -109,16 +118,17 @@ if __name__ == "__main__":
 
     if args.fasta_path:
        fasta_tbl = args.fasta_path + ".txt"
-       sequence_lols = parse_fasta(args.fasta_path, fasta_tbl, True)
+       sequence_lols = parse_fasta(args.fasta_path, fasta_tbl, True, maxlength)
        print(len(sequence_lols))
-       sequence_lols = [x for x in sequence_lols if len(x[1]) < 250]
+       #sequence_lols = [x for x in sequence_lols if len(x[1]) < 250]
        print(len(sequence_lols))
-
+       print(sequence_lols)
        df = pd.DataFrame.from_records(sequence_lols,  columns=['id', 'sequence', 'sequence_spaced']) 
 
        #df = df.head(1)
-       #print(df)
+       print(df)
        pd.set_option('display.max_colwidth', None)
+       
        df['output'] = df.apply(lambda row: explain_a_pred(row.sequence_spaced, explainer), axis = 1)
        print(df['output'])
        

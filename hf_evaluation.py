@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # This is causing circular import error
-from transformer_infrastructure.classification_utils import *
+#from transformer_infrastructure.classification_utils import *
  
 
 import torch
