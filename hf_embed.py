@@ -10,9 +10,6 @@ import argparse
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
-#from sentence_transformers import LoggingHandler, SentenceTransformer, models, evaluation
-#import numba as nb
-#import awkward as ak
 import time
 
 '''
@@ -98,8 +95,8 @@ def get_embed_args():
                         help="Flag: Whether to get sequence embeddings")
     parser.add_argument("-a", "--get_aa_embeddings", dest = "get_aa_embeddings", action = "store_true",
                         help="Flag: Whether to get amino-acid embeddings")
-    parser.add_argument("-p", "--extra_padding", dest = "padding", type = int, default = 5,
-                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Add n X's to start and end of sequencesPotentially not needed for sets of complete sequences or domains that start at the same character, default: 5")
+    parser.add_argument("-p", "--padding", dest = "padding", type = int, default = 10,
+                        help="Add if using unaligned sequence fragments (to reduce first and last character effects). Add n X's to start and end of sequencesPotentially not needed for sets of complete sequences or domains that start at the same character, default: 10")
     parser.add_argument("-t", "--truncate", dest = "truncate", type = int, required = False,
                         help= "Optional: Truncate all sequences to this length")
     parser.add_argument("-ad", "--aa_target_dim", dest = "aa_target_dim", type = int, required = False,
@@ -295,30 +292,9 @@ def retrieve_aa_embeddings(model_output, model_type, layers = None, padding = 0,
        print("Model type required to extract aas. Currently supported bert and t5")
        return(0)
 
-    #print("pre", aa_embeddings.shape)
-    #if padding > 0:
-    #    # to remove CLS + XXXXX + XXXXX + SEP
-    #    trim = 1 + padding
-    #else:
-    #     # to remove CLS + SEP 
-    #     trim = 1
     aa_embeddings = aa_embeddings[:,front_trim:-end_trim,:]
-    #print('aa_embeddings.shape: {}'.format(aa_embeddings.shape))
 
     return(aa_embeddings, aa_embeddings.shape)
-
-
-#def retrieve_sequence_embeddings(model_output, encoded):
-#   
-#    ''' 
-#    UNUSED
-#    Get a sequence embedding by taking the mean of all final layer amino acid embeddings
-#    Return shape (numseqs x 1024)
-#    '''
-#    print("encoded", encoded['attention_mask'])
-#    sentence_embeddings = mean_pooling(model_output, encoded['attention_mask'])
-#    print('sentence_embeddings.shape: {}'.format(sentence_embeddings.shape))
-#    return(sentence_embeddings)
 
 
 def load_model(model_path, output_hidden_states = True, output_attentions = False, half = False, return_config = False):
@@ -339,10 +315,11 @@ def load_model(model_path, output_hidden_states = True, output_attentions = Fals
     if model_type == "t5":
         print("T5 model")
         tokenizer = T5Tokenizer.from_pretrained(model_path)
+        print("tokenizer loaded")
         model = T5EncoderModel.from_pretrained(model_path, 
                        output_hidden_states=output_hidden_states, 
                        output_attentions = output_attentions)
-
+        print("model_loaded")
     else:
         print("Automodel")
         tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -385,18 +362,6 @@ class ListDataset(Dataset):
         return len(self.data)
 
 
-#@nb.jit
-#def make_direct(input, lengths, builder):
-#    '''
-#    Allows trimming ragged array to the actual sequence lengths
-#    No unnecessary embedding vectors saved
-#    From jpivarski
-#    https://github.com/scikit-hep/awkward-1.0/issues/480#issuecomment-703740986
-#    ''' 
-#
-#    for i in range(len(lengths)):
-#         builder.append(input[i][:lengths[i]])
-#    return builder
 
 
 def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, get_aa_embeddings = True, padding = 5, ragged_arrays = False, aa_pcamatrix_pkl = None, sequence_pcamatrix_pkl = None, heads = None, layers = None, strat="meansig"):
@@ -425,18 +390,12 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
     print("device_ids", device_ids)
     if torch.cuda.device_count() > 1:
        print("Let's use", torch.cuda.device_count(), "GPUs!")
-       #model = nn.DataParallel(model)
        model = nn.DataParallel(model, device_ids=device_ids).cuda()
-       #model.to(device_ids) 
-
+       #model.to(device_ids) ??? 
+   
     else:
        model = model.to(device)
 
-    # Definitly needs to be batched, otherwise GPU memory errors
-    #if torch.cuda.device_count():
-    #   batch_size = torch.cuda.device_count()
-    #else:
-    #   batch_size = 1
     batch_size = 1
     collate = Collate(tokenizer=tokenizer)
 
@@ -510,20 +469,6 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                      if strat == "meansig":
                           sequence_embeddings_sigma = np.std(aa_embeddings, axis = 1)
                           sequence_sigma_array_list.append(sequence_embeddings_sigma)
-                          #means = np.mean(aa_embeddings, axis = 1)
-                          #variances = np.var(aa_embeddings, axis = 1)
-                          #print("means", means.shape)
-                          #print("variances", variances.shape)
-                          #print("aa_shape", aa_embeddings.shape)
-                          ## Sample from normal distribution centered around 0 with variance
-                          #f1 = lambda x: np.random.normal(0, np.sqrt(x))
-                          #variance_corrections = f1(variances) / np.sqrt(aa_shape[0])
-
-                          #sequence_embeddings  = means + variance_corrections
-                          #print("sequence_embeddings.shape", sequence_embeddings.shape)
-                     #Mean and variance
-                     # Instead of euclidean distance, difference of gaussian 
-                     # Total variation distance between distributions                         
 
 
                      if sequence_pcamatrix_pkl:
@@ -535,14 +480,11 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
 
                 if aa_pcamatrix_pkl:
                     aa_embeddings = np.apply_along_axis(apply_pca, 2, aa_embeddings, aa_pcamatrix, aa_bias)
-                    #print("Post PCA aa_embeddings.shape", aa_embeddings.shape)
                 # Trim each down to just its sequence length
                 if ragged_arrays == True:
                     aa_embed_ak_intermediate_list = []
                     for j in range(len(aa_embeddings)):
                          seqindex = (batch_size * count) + j
-                         #print(count, j, seqindex, seqlens[seqindex])
-                         #print(aa_embeddings[j])
                          aa_embed_trunc = aa_embeddings[j][:seqlens[seqindex], :]
                     
                          aa_embed_ak = ak.Array(aa_embed_trunc)
@@ -557,11 +499,7 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
                         # print(maxlen - (aa_embeddings.shape[1] - 1))
                          #if padding:
                         dim2 = maxlen - (aa_embeddings.shape[1])
-                        #else:
-                             #dim2 = maxlen 
                         npad = ((0,0), (0, dim2), (0,0))
-                        #print(npad)
-                        #print(maxlen, aa_embeddings.shape[1])
                         aa_embeddings = np.pad(aa_embeddings, npad)
                         aa_array_list.append(aa_embeddings)
 
@@ -573,10 +511,6 @@ def get_embeddings(seqs, model_path, seqlens, get_sequence_embeddings = True, ge
  
         
         lengths = np.array(seqlens)
-
-        # Trim each aa embedding to only the aa's in the original sequences
-        #ak_aa = make_direct(ak_aa, lengths, ak.ArrayBuilder()).snapshot()
-
         embedding_dict = {}
 
         if get_sequence_embeddings == True:
@@ -665,20 +599,6 @@ if __name__ == "__main__":
                                                 pkl_pca_out = pkl_pca_out, 
                                                 target_dim = args.aa_target_dim, 
                                                 max_train_sample_size = None)
-
-    # Reduce sequence dimension with previous pca transform
-    #if args.sequence_pcamatrix:
-    #   embedding_dict['sequence_embeddings'] =  control_pca(embedding_dict, 
-    #                                            'sequence_embeddings', 
-    #                                            pkl_pca_in = args.sequence_pcamatrix) 
-
-    # Reduce aa dimension with previous pca transform
-    #if args.aa_pcamatrix:
-    #   embedding_dict['aa_embeddings'] =  control_pca(embedding_dict, 
-    #                                            'aa_embeddings', 
-    #                                            pkl_pca_in = args.aa_pcamatrix) 
-
-
 
              
     #Store sequences & embeddings on disk

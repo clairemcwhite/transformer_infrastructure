@@ -50,14 +50,6 @@ import logging
 
 from sklearn.metrics.pairwise import cosine_similarity
 
-#class Config:
-#    def __init__(self):
-#       self.input_fasta = ""
-#       self.seqnames = ""
-#       self.seqsimthresh = ""
-#       self.model_name = ""
-
-
 
 class AA:
    
@@ -72,7 +64,7 @@ class AA:
        self.nextaa = ""
    
 
-   #__str__ and __repr__ are for pretty #icing
+   #__str__ and __repr__ are for pretty printing
    
     def __str__(self):
         return("{}-{}-{}".format(self.seqnum, self.seqpos, self.seqaa))
@@ -135,6 +127,7 @@ class Alignment:
         return str(self)
 
 def get_seqs_aas(seqs, seqnums):
+    
     seqs_aas = []
     seq_to_length = {}
  
@@ -369,12 +362,12 @@ def make_alignment(cluster_order, seqnums, clustid_to_clust, seqnames):
                    continue
     #ic a preview)
     alignment_str = ""
-    ic("Alignment")
+    print("Alignment")
 
     alignment = Alignment(alignment_lol, seqnames)        
     str_alignment = alignment.str_formatted
     for row_str in str_alignment: 
-       ic("Align: ", row_str[0:170])
+       print("Align: ", row_str[0:170])
 
     return(alignment)
 
@@ -880,19 +873,40 @@ def remove_feedback_edges(cluster_orders_dict, clustid_to_clust, gapfilling_atte
     #i = 0
     to_remove = []
     removed_edges = []
+    removed_clustids = []
     for feedback_arc in fas:
        edge = G_order.es()[feedback_arc]
        source_name = G_order.vs[edge.source]["name"]
        target_name = G_order.vs[edge.target]["name"]
      
-       ic("Feedback edge {}, index {}, edge.source {} edge.target {} source_name {}, target_name{}" .format(edge, edge.index, edge.source, edge.target, source_name, target_name))
-       removed_edges.append((edge.source, edge.target, source_name, target_name))
+       ic("Feedback edge {}, index {}, edge.source {} edge.target {} source_name {}, target_name {}" .format(edge, edge.index, edge.source, edge.target, source_name, target_name))
+       # If one node in the feedback edges is significantly stronger (i.e. more incumbent edges"
+       # Actually just use degree
+       strength_source =  G_order.strength(edge.source, weights = "weight")
+       strength_target =  G_order.strength(edge.target, weights = "weight")
+       print("STRENGTH source",  source_name, strength_source)
+       print("STRENGTH target", target_name, strength_target)
+       if strength_source >= 2* strength_target:
+             #G_order.delete_vertex(edge.target)
+             print("keeping ", source_name)
+             removed_clustids.append(target_name)
+             #to_remove.append([[edge.target]])
+       elif strength_target >= 2* strength_source:
+             #G_order.delete_vertex(edge.source)
+             print("keeping ", target_name) 
+             removed_clustids.append(source_name)
+             #to_remove.append([[edge.source]]))
+ 
+       else:
+
+           removed_edges.append((edge.source, edge.target, source_name, target_name))
 
     # Delete feed back arc edges
     G_order.delete_edges(fas)
  
     # Check if graph is still dag if edge is added back.
     # If so, keep it
+
     for removed_edge in removed_edges:
          ic("try to return", removed_edge[2:])
          G_order.add_edges(  [removed_edge[0:2]]) # vertex id pairs 
@@ -900,8 +914,12 @@ def remove_feedback_edges(cluster_orders_dict, clustid_to_clust, gapfilling_atte
          ic(G_order.is_dag())
          # Retain edges that aren't actually feedback loops
          # Some edges identified by feedback_arc aren't actually cycles (???)
+         
          if not G_order.is_dag():
              G_order.delete_edges([removed_edge[0:2]])        
+ 
+             # Compare vertex strengths to decide which node to keep. 
+
              #G_order.delete_edges([removed_edge[2:]])        
 
              # try alternate cluster conformations
@@ -976,9 +994,8 @@ def remove_feedback_edges(cluster_orders_dict, clustid_to_clust, gapfilling_atte
     ic("Doing remove")
     reduced_clusters = []
     #too_small_clusters = []
-    removed_clustids = list(flatten(list(remove_dict.values())))
+    removed_clustids = removed_clustids + list(flatten(list(remove_dict.values())))
     
-    removed_clusters = []
     ic("removed clusters", removed_clustids)
    
     for clustid, clust in clustid_to_clust.items():
@@ -1675,8 +1692,14 @@ def first_clustering(G,  betweenness_cutoff = .10, ignore_betweenness = False, a
 
 
 #@profile
-def get_new_clustering(G, betweenness_cutoff = 0.10,  apply_walktrap = True):
-    ic("get_new_clusteri                 all_alternates_dict = {**all_alternates_dict, **alternates_dict}ng")
+def get_new_clustering(G, betweenness_cutoff = 0.10,  apply_walktrap = True, prev_G = None):
+
+    ic(G.vs()['name'])
+    if prev_G:
+        ic(prev_G.vs()['name'])
+        if G.vs()['name'] == prev_G.vs()['name']:
+            return([], {})
+    ic("get_new_clustering")#                 all_alternates_dict = {**all_alternates_dict, **alternates_dict}
     new_clusters = []
     connected_set = G.vs()['name']
    # #ic("after ", sub_connected_set)
@@ -1706,20 +1729,37 @@ def get_new_clustering(G, betweenness_cutoff = 0.10,  apply_walktrap = True):
             vx_names = G.vs()
             hub_names = list(zip(names, vx_names, hub_scores))
             
-            #high_authority_nodes = [x[0] for x in hub_names if x[2]  > 0.2]
-            #ic("high authority_nodes", high_authority_nodes)
+            high_authority_nodes = [x[0] for x in hub_names if x[2]  > 0.2]
+            ic("high authority_nodes", high_authority_nodes)
             high_authority_nodes_vx = [x[1] for x in hub_names if x[2]  > 0.2]
-
+            
             low_authority_nodes = [x[0] for x in hub_names if x[2]  <= 0.2]
+            low_authority_node_ids = [x[1] for x in hub_names if x[2]  <= 0.2]
+
             ic("removing low authority_nodes", low_authority_nodes)
-            low_authority_nodes = []
-            if len(low_authority_nodes) > 0:
+            #low_authority_nodes = []
+            if len(low_authority_nodes) > 0 and len(high_authority_nodes) > 0:
+                print("before", G)
+                print([x for x in G.es()])
                 
-                G = G.subgraph(high_authority_nodes_vx)
+                print([x['name'] for x in G.vs()])
+                print(low_authority_nodes)
+                high_authority_edges =  G.es.select(_within = high_authority_nodes_vx)
+                #If not edges left after removing low authority nodes
+                print("high authority_edges", high_authority_edges)
+                print([x for x in high_authority_edges])
+                if len(high_authority_edges) > 0:                
+                    
+                    G.delete_vertices(low_authority_node_ids)
+                    print("After delete", G)
+                #G = G.subgraph(high_authority_nodes_vx)
                 names = [x['name'] for x in G.vs()]
                 ic("names prior to new clusters", names)
 
                 min_dupped = min_dup(names, 1.2) 
+                print("after", G)
+                print([x for x in G.es()])
+                print([x['name'] for x in G.vs()])
             if len(names) <= min_dupped:           
                 ic("get_new_clustering:new_G", G)
                 processed_cluster, alternates_dict =  process_connected_set(names, G, dup_thresh = 1.2, betweenness_cutoff = betweenness_cutoff)
@@ -1733,6 +1773,7 @@ def get_new_clustering(G, betweenness_cutoff = 0.10,  apply_walktrap = True):
                 # Change these steps to 3??
                 # steps = 1 makes clear errors
                 ic("len(connected_set, min_duppled", len(connected_set), min_dupped) 
+                print(G)
                 clustering = G.community_walktrap(steps = 3, weights = 'weight').as_clustering()
                 #i = 0
                 for sub_G in clustering.subgraphs():
@@ -1741,7 +1782,7 @@ def get_new_clustering(G, betweenness_cutoff = 0.10,  apply_walktrap = True):
                      
                      # New clusters may be too large still, try division process w/ betweenness
                      
-                     processed_cluster,alternates_dict = process_connected_set(sub_connected_set, sub_G, dup_thresh = 1.2, betweenness_cutoff = betweenness_cutoff) 
+                     processed_cluster, alternates_dict = process_connected_set(sub_connected_set, sub_G, dup_thresh = 1.2, betweenness_cutoff = betweenness_cutoff) 
                      new_clusters = new_clusters + processed_cluster 
                      if alternates_dict:
                         all_alternates_dict = {**all_alternates_dict, **alternates_dict}                   
@@ -1774,7 +1815,7 @@ def min_dup(connected_set, dup_thresh):
  
 
 #@profile
-def process_connected_set(connected_set, G, dup_thresh = 1.2,  betweenness_cutoff = 0.10):
+def process_connected_set(connected_set, G, dup_thresh = 1.2,  betweenness_cutoff = 0.10, prev_G = None):
     ''' 
     This will take a connected sets and 
     1) Check if it's very duplicated
@@ -1793,17 +1834,17 @@ def process_connected_set(connected_set, G, dup_thresh = 1.2,  betweenness_cutof
         ic("Check for betweenness")
        
         new_G = remove_highbetweenness(G, betweenness_cutoff = 0.10)
-        ic("prebet", G.vs()['name'])
-        ic("postbet", new_G.vs()['name'])
+        #ic("prebet", G.vs()['name'])
+        #ic("postbet", new_G.vs()['name'])
         #if len(new_Gs) > 1:
         new_islands = new_G.clusters(mode = "weak")
         for sub_G in new_islands.subgraphs():
                 alternates_dict = {}
                 sub_connected_set = sub_G.vs()['name']
-                ic("postbet_island", sub_connected_set)
+                #ic("postbet_island", sub_connected_set)
                 sub_min_dupped =  min_dup(sub_connected_set, dup_thresh) 
                 
-                ic("sub_min_dupped", sub_min_dupped)
+                #ic("sub_min_dupped", sub_min_dupped)
                 # Actually going to keep all clusters below min dup thresh
                 if (len(sub_connected_set) <= sub_min_dupped) or (len(sub_connected_set) <= 5):
                     trimmed_sub_connected_set, alternates_dict = remove_doubles_by_graph(sub_connected_set, sub_G) 
@@ -1811,10 +1852,15 @@ def process_connected_set(connected_set, G, dup_thresh = 1.2,  betweenness_cutof
 
                 else:
                     ic("still about min_dupped applying walktrap")
-                    new_walktrap_clusters, alternates_dict = get_new_clustering(sub_G, betweenness_cutoff = betweenness_cutoff,  apply_walktrap = True)
+                    new_walktrap_clusters, alternates_dict = get_new_clustering(sub_G, betweenness_cutoff = betweenness_cutoff,  apply_walktrap = True, prev_G = G)
+                    #print("CONNECTED_SET", connected_set)
+                    #print("SUB_CONNECTECT_SET", sub_connected_set)
+                    #print("NEW_WALKTRAP_CLUSTERS", new_walktrap_clusters)
+              
+                    #iif new_walktrap_clusters == connected_set
                     for cluster in new_walktrap_clusters:
                             new_clusters.append(cluster)
-                    ic(new_clusters)
+                    #ic(new_clusters)
                     if alternates_dict:
                         all_alternates_dict = {**all_alternates_dict, **alternates_dict}
 
@@ -2079,7 +2125,7 @@ def get_seq_groups(seqs, seq_names, embedding_dict, logging, exclude, do_cluster
        png_hidden_out = "{}/{}.initial.prebatch.png".format(record_dir, outfile_name)
        do_pca_plot(hidden_states, index_to_aa, png_hidden_out, seq_to_length = seq_to_length)
     
-    no_batch_correct = False
+    no_batch_correct = True
     if not no_batch_correct:
       
         #ic( list(range(len(seqs_aas)))) 
@@ -2409,7 +2455,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
     hitlist_all = get_besthits(I2, minscore = 0) # High threshold for first clustering 
     
     for x in hitlist_all:
-       ic("hitlist_all:", x)
+       print("hitlist_all:", x)
     logging.info("got best hitlist")
 
     #logging.info("get top hitlist")
@@ -2427,7 +2473,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
     #    rbh_list = remove_streakbreakers(rbh_list, seqs_aas, seqnums, seqlens, streakmin = 3)
 
     for x in rbh_list:
-      ic("rbh", x) 
+      print("rbh", x) 
    
     ######################################### Do walktrap clustering
     outnet = "{}/{}.testnet_initial_clustering{}.csv".format(record_dir, outfile_name, alignment_group)
@@ -2524,7 +2570,7 @@ def get_similarity_network(seqs, seq_names, seqnums, hstates_list, logging, mins
     ############## CONTROL LOOP ###################
     for gapfilling_attempt in range(0, 200):
         gapfilling_attempt = gapfilling_attempt + 1
-        ic("Align this is gapfilling attempt ", gapfilling_attempt)
+        print("Align this is gapfilling attempt ", gapfilling_attempt)
         logging.info("gapfilling_attempt {}".format(gapfilling_attempt))
         if gapfilling_attempt > 6 and minclustsize > 2 and gapfilling_attempt % 2 == 1:
                 minclustsize = minclustsize - 1
@@ -2948,7 +2994,7 @@ def address_unassigned_aas(scope_aas, neighbors, I2, minscore = 0.5, ignore_betw
             ic("address_unassigned_aas RBH pulled from cache")
             new_rbh = rbh_dict[frozenset(scope_aas)]   
         for x in new_rbh:
-             ic("address_unassigned_aas:new_rbh", x)
+             print("address_unassigned_aas:new_rbh", x)
         G = graph_from_rbh(new_rbh) 
         new_clusters,all_alternates_dict  = first_clustering(G, betweenness_cutoff = betweenness_cutoff,  ignore_betweenness = ignore_betweenness, apply_walktrap = apply_walktrap ) 
      
@@ -2966,7 +3012,7 @@ def address_unassigned_aas(scope_aas, neighbors, I2, minscore = 0.5, ignore_betw
 
 
 
-#@profile
+#@profile/
 def fill_in_unassigned_w_clustering(unassigned, seqs_aas, cluster_order, clustid_to_clust, pos_to_clustid, I2, gapfilling_attempt,  minscore = 0.1, minclustsize = 2, ignore_betweenness = False, betweenness_cutoff = 0.3, apply_walktrap = True, rbh_dict = {}, seqnames = [], args = None ):        
     '''
     Run the same original clustering, ??? allows overwritting of previous clusters
@@ -3168,9 +3214,11 @@ def get_align_args():
     parser.add_argument("-m", "--model", dest = "model_name",  type = str, required = True,
                         help="Model name or path to local model")
 
-    parser.add_argument("-p", "--pca_plot", dest = "pca_plot",  action = "store_true", required = False, 
+    parser.add_argument("-pca", "--pca_plot", dest = "pca_plot",  action = "store_true", required = False, 
                         help="If flagged, output 2D pca plot of amino acid clusters")
 
+    parser.add_argument("-p", "--padding", dest = "padding",  type = int, required = False, default = 10, 
+                        help="Number of characters of X to add to start and end of sequence (can be important for fragment sequences), default: 10")
     parser.add_argument("-l2", "--headnorm", dest = "headnorm",  action = "store_true", required = False, 
                         help="Take L2 normalization of each head")
     args = parser.parse_args()
@@ -3306,6 +3354,7 @@ if __name__ == '__main__':
     pca_plot = args.pca_plot
     seqlimit = args.seqlimit
     headnorm = args.headnorm
+    padding =args.padding
     seqsim_thresh  = args.seqsimthresh 
     # Keep to demonstrate effect of clustering or not
     do_clustering = True
@@ -3352,7 +3401,6 @@ if __name__ == '__main__':
     # Glyco_hydro_18_D2.vie.3seqs.fasta
     # padding = 5 or 9 does NOT work
     # padding = 10 and 11 does
-    padding = 10
     minscore1 = 0.5
 
     logging.info("model: {}".format(model_name))

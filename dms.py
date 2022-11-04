@@ -63,12 +63,10 @@ def attndf_to_graphlist(df):
     df_filtered = df_grouped[['res1', 'res2', 'attention']]
     #for d in df_filtered:
     #    print(d)
-    #print(df_filtered)
-    #G_list = []
     G_dict = {}    
     for name, tbl in df_filtered:
         ungrouped = tbl.reset_index()
-        G = Graph.DataFrame(ungrouped[['res1', 'res2']])
+        G = Graph.DataFrame(ungrouped[['res1', 'res2']], use_vids=False)
         #print("G_start", G)
         G.es["weight"] = ungrouped['attention'].tolist()
         #print("G w weight", G)
@@ -321,8 +319,10 @@ if __name__ == "__main__":
             headlist.append(str(layer) + "-" + str(head))
     
     #o.write("proteinID,mutation{}\n".format(headstr))#"edges1,edges2,distinct_edges1,distinct_edges2,distinct_edge_weight1,distinct_edge_weight2,total_edge_weight1,total_edge_weight2\n")
+    print(fasta_path)
     with open(fasta_path) as handle:
         for record in SeqIO.parse(handle, "fasta"):
+            print(record)
             if len(mutlist) ==  0:  # If havent provided a mutation list, do full dms scan 
               for seq_index, seq in enumerate(record.seq):
    
