@@ -78,7 +78,7 @@ def get_attn_data(model, tokenizer, tokens, min_attn = 0.1, start_index=0, end_i
     #    assert len(token_idxs) == len(tokens) + 2
 
     print("get_inputs")    
-    inputs = torch.tensor(token_idxs).unsqueeze(0)
+    inputs = torch.tensor(token_idxs).unsqueeze(0).cuda()
     with torch.no_grad():
         attns = model(inputs)[-1]
         # Remove attention from <CLS> (first) and <SEP> (last) token

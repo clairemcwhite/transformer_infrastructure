@@ -8,7 +8,8 @@ from Bio.Data import SCOPData
 from Bio.PDB import PDBParser, PPBuilder
 #from tape import TAPETokenizer, ProteinBertModel
 from chimerax.core.commands import run
-from transformers import AutoModel, AutoTokenizer
+#from transformers import AutoModel, AutoTokenizer
+from transformer_infrastructure.hf_embed import load_model
 from transformer_infrastructure.attn_calc import get_attn_data, parse_mut
 
 
@@ -34,7 +35,7 @@ def get_attention_args():
 
  
     args = parser.parse_args()
- 
+    print(args) 
     return(args)
 
 
@@ -80,18 +81,18 @@ def get_tokens_and_coords(chain, mut =  None):
 
 
 
-def load_model(model_path):
-    '''
-    Takes path to huggingface model directory
-    Returns the model and the tokenizer
-    '''
-    print("load tokenizer")
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+#def load_model(model_path):
+#    '''
+#    Takes path to huggingface model directory
+#    Returns the model and the tokenizer
+#    '''
+#    print("load tokenizer")
+#    tokenizer = AutoTokenizer.from_pretrained(model_path)
+#
+#    print("load model")
+#    model = AutoModel.from_pretrained(model_path, output_attentions=True)
 
-    print("load model")
-    model = AutoModel.from_pretrained(model_path, output_attentions=True)
-
-    return(model, tokenizer)
+#    return(model, tokenizer)
 
 def main_func():
 
@@ -115,12 +116,15 @@ def main_func():
          print("Requires either --pdb_id or --struct_file")
          return(0)
 
-    model, tokenizer = load_model(model_path)
-
-    #tokenizer = TAPETokenizer()
-    #model = ProteinBertModel.from_pretrained('bert-base', output_attentions=True)
-    #model= args.model_path
-
+    model, tokenizer, model_config = load_model(model_path,
+                        output_hidden_states=False,
+                        output_attentions = True,
+                        return_config = True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("CUDA available?", torch.cuda.is_available())
+    model.to(device)
+    # Set to inference mode
+    model.eval()
  
     base_structfile = struct_file.split("/")[-1]
     if struct_file:
@@ -136,21 +140,36 @@ def main_func():
        print('Warning:', len(structure_models), 'models. Using first one')
     prot_model = structure_models[0]
 
+    # Get tokens, coords, resnums for each chain
+    # Get attentions between by concatenating. all tokens
+
     if chain_ids is None:
        chain_ids = [chain.id for chain in prot_model]
-    chain_id = chain_ids[0]
 
-    # Get informations out of structure file
-    print('Loading chain', chain_id) 
-    chain = prot_model[chain_id]   
-    print("chain", chain) 
-    tokens, coords, resnums = get_tokens_and_coords(chain, mut)
+    tokens = []
+    coords = []
+    resnums = []
 
-    print(tokens)
-    # Calculate attentions 
-    attns = get_attn_data(model, tokenizer, tokens, min_attn  = min_attn)
+    for chain_id in chain_ids: 
+        #chain_id = chain_ids[0]
     
+        # Get informations out of structure file
+        print('Loading chain', chain_id) 
+        chain = prot_model[chain_id]   
+        print("chain", chain) 
+        chain_tokens, chain_coords, chain_resnums = get_tokens_and_coords(chain, mut)
+        tokens = tokens + chain_tokens
+        coords = coords + chain_coords
+        resnums = resnums + chain_resnums
+  
+
+
+        print(tokens)
+        # Calculate attentions 
+    model.to(device)
+    attns = get_attn_data(model, tokenizer, tokens,min_attn  = min_attn)
      
+         
 
     num_layers = len(attns)
     num_heads = len(attns[0])

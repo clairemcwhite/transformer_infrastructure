@@ -161,16 +161,16 @@ if __name__ == "__main__":
 
     # create dict of id:seq
     #for i in range(len(dev_seqs1)):
-    for i in range(0,5):
-       dev_seq_dict[dev_ids1[i]] = dev_seqs1[i]
-       dev_seq_dict[dev_ids2[i]] = dev_seqs2[i]
-    # Create pairs list of duplicate ids
-    for i in range(0,5):
-    #for i in range(len(dev_seqs1)):
-       if dev_labels[i] == 1:
-         dev_duplicates.append([dev_ids1[i], dev_ids2[i]])
-    print(dev_seq_dict)
-    print(dev_duplicates)
+    #for i in range(0,5):
+    #   dev_seq_dict[dev_ids1[i]] = dev_seqs1[i]
+    #   dev_seq_dict[dev_ids2[i]] = dev_seqs2[i]
+    ## Create pairs list of duplicate ids
+    #for i in range(0,5):
+    ##for i in range(len(dev_seqs1)):
+    #   if dev_labels[i] == 1:
+    #     dev_duplicates.append([dev_ids1[i], dev_ids2[i]])
+    #print(dev_seq_dict)
+    #print(dev_duplicates)
     # The ParaphraseMiningEvaluator computes the cosine similarity between all sentences and
     # extracts a list with the pairs that have the highest similarity. Given the duplicate
     # information in dev_duplicates, it then computes and F1 score how well our duplicate mining worked
